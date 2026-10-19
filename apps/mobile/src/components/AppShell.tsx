@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import MobileNav from './MobileNav';
 import Sidebar from './Sidebar';
 import { isImmersiveRoute } from '../pages/MobilePages';
+import { useAuth } from '../auth/AuthContext';
 
 const pageNames: Record<string, string> = {
   '/': '概览',
@@ -16,8 +17,10 @@ const pageNames: Record<string, string> = {
 
 export default function AppShell() {
   const { pathname } = useLocation();
+  const { user, serverStatus } = useAuth();
   const pageName = pageNames[pathname] ?? '概览';
   const immersive = isImmersiveRoute(pathname);
+  const connectionLabel = serverStatus === 'connected' ? '已连接本地服务' : serverStatus === 'checking' ? '正在检查服务器' : serverStatus === 'unavailable' ? '服务器不可用' : '未连接本地服务';
 
   return (
     <div className={`app-layout${immersive ? ' mobile-immersive' : ''}`}>
@@ -31,18 +34,18 @@ export default function AppShell() {
           </div>
           <div className="topbar-actions">
             <div className="connection-status">
-              <span className="status-dot" />
-              <span>未连接本地服务</span>
+              <span className={`status-dot${serverStatus === 'connected' ? ' is-online' : ''}`} />
+              <span>{connectionLabel}</span>
             </div>
             <details className="user-menu">
               <summary aria-label="用户菜单">
                 <span className="avatar avatar-small"><IconUserFilled size={21} /></span>
-                <span className="user-menu-label">未登录</span>
+                <span className="user-menu-label">{user?.username ?? '未登录'}</span>
                 <IconChevronDown className="user-menu-chevron" size={16} stroke={1.8} />
               </summary>
               <div className="user-menu-popover">
-                <strong>学习用户</strong>
-                <span>连接本地服务后登录</span>
+                <strong>{user?.username ?? '未登录'}</strong>
+                <span>{user ? (user.role === 'admin' ? '本机管理员' : '已登录') : '连接本地服务后登录'}</span>
               </div>
             </details>
           </div>

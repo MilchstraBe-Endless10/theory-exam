@@ -10,22 +10,31 @@ import {
 } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import StatCard from '../components/StatCard';
+import { useAuth } from '../auth/AuthContext';
+import { useBanks } from '../services/banks';
 import { MobileDashboard } from './MobilePages';
 
 const masteryTypes = [
-  { name: '单选题', description: '共 845 题', tone: 'mint' },
-  { name: '多选题', description: '共 38 题', tone: 'blue' },
-  { name: '判断题', description: '共 400 题', tone: 'purple' },
+  { name: '单选题', key: 'single', tone: 'mint' },
+  { name: '多选题', key: 'multiple', tone: 'blue' },
+  { name: '判断题', key: 'judgement', tone: 'purple' },
 ];
 
 export default function DashboardPage() {
+  const { user } = useAuth();
+  const { activeBank: bank, loading, error } = useBanks();
+  const rules = bank?.examRules;
+  const examCount = rules ? rules.singleCount + rules.multipleCount + rules.judgementCount : null;
+  const examScore = rules ? rules.singleCount * rules.singlePoints + rules.multipleCount * rules.multiplePoints + rules.judgementCount * rules.judgementPoints : null;
+  const bankLabel = bank?.name ?? (loading ? '正在读取题库…' : user ? '暂无已启用题库' : '请连接并登录本地服务');
+
   return (
     <>
     <div className="desktop-route">
     <main className="dashboard-page">
       <div className="page-intro">
         <h1>从今天的进步开始。</h1>
-        <p>四级理论题库 · 稳步完成每一次练习</p>
+        <p>{bank ? `${bank.name} · 稳步完成每一次练习` : error || '连接并登录本地服务后读取已启用题库'}</p>
       </div>
 
       <section className="stat-grid" aria-label="学习数据概览">
@@ -43,7 +52,7 @@ export default function DashboardPage() {
               <h2>继续练习</h2>
               <p>顺序练习 · 按题库顺序逐题练习</p>
             </div>
-            <span className="bank-chip">四级理论题库</span>
+            <span className="bank-chip">{bankLabel}</span>
           </div>
           <div className="progress-summary">
             <span>练习进度将在连接服务端后显示</span>
@@ -62,14 +71,14 @@ export default function DashboardPage() {
               <h2>模拟考试</h2>
               <p>全真模拟 · 随机组卷，限时完成</p>
             </div>
-            <span className="bank-chip">四级理论题库</span>
+            <span className="bank-chip">{bankLabel}</span>
           </div>
-          <div className="exam-facts" aria-label="四级考试规则">
-            <div className="exam-fact"><IconFileText size={21} stroke={1.8} /><strong>180 题</strong></div>
-            <div className="exam-fact"><IconClockHour4 size={21} stroke={1.8} /><strong>90 分钟</strong></div>
-            <div className="exam-fact"><IconTrophy size={21} stroke={1.8} /><strong>满分 100 分</strong></div>
+          <div className="exam-facts" aria-label="当前题库考试规则">
+            <div className="exam-fact"><IconFileText size={21} stroke={1.8} /><strong>{examCount === null ? '—' : `${examCount} 题`}</strong></div>
+            <div className="exam-fact"><IconClockHour4 size={21} stroke={1.8} /><strong>{rules ? `${rules.durationMinutes} 分钟` : '—'}</strong></div>
+            <div className="exam-fact"><IconTrophy size={21} stroke={1.8} /><strong>{examScore === null ? '—' : `满分 ${examScore} 分`}</strong></div>
           </div>
-          <Link className="button button-outline button-wide" to="/exams">开始模拟考试</Link>
+          <Link className="button button-outline button-wide" to="/exams">{rules ? '查看模拟考试规则' : '查看题库与考试设置'}</Link>
         </article>
       </section>
 
@@ -83,9 +92,9 @@ export default function DashboardPage() {
             <Link className="text-link" to="/records">查看详情 <IconChevronRight size={16} /></Link>
           </div>
           <div className="mastery-list">
-            {masteryTypes.map((item) => (
+              {masteryTypes.map((item) => (
               <div className="mastery-row" key={item.name}>
-                <div className="mastery-label"><strong>{item.name}</strong><span>（{item.description}）</span></div>
+                <div className="mastery-label"><strong>{item.name}</strong><span>（共 {bank?.activeVersion?.typeCounts[item.key] ?? '—'} 题）</span></div>
                 <div className="progress-track mastery-track" role="img" aria-label={`${item.name}暂无掌握统计`}>
                   <span className={`progress-fill ${item.tone}-fill`} />
                 </div>
@@ -93,7 +102,7 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
-          <p className="card-footnote">题型题量来自原始 Excel；掌握度待服务端数据</p>
+          <p className="card-footnote">{bank ? '题型题量来自当前服务端题库版本；掌握度待学习记录接入' : '当前没有可读取的题库版本；掌握度待学习记录接入'}</p>
         </article>
 
         <article className="card review-card">

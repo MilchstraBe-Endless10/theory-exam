@@ -62,6 +62,19 @@ async function click(selector) {
   check(found, `missing clickable element: ${selector}`);
 }
 
+async function fill(selector, value) {
+  const found = await evaluate(`(() => {
+    const input = document.querySelector(${JSON.stringify(selector)});
+    if (!input) return false;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(input, ${JSON.stringify(value)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return input.value === ${JSON.stringify(value)};
+  })()`);
+  check(found, `could not fill input: ${selector}`);
+}
+
 async function capture(relativePath) {
   if (!captureRoot) return;
   const { data } = await cdp('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false });
@@ -184,8 +197,11 @@ try {
   check(await evaluate('document.querySelector("input[autocomplete=current-password]").type === "password"'), 'password visibility toggle did not conceal the password');
   await click('.remember-row input');
   check(await evaluate('document.querySelector(".remember-row input").checked === false'), 'remember-me checkbox did not toggle');
+  await fill('input[autocomplete="username"]', 'preview-learner');
+  await fill('input[autocomplete="current-password"]', 'preview-password');
   await click('button[type="submit"]');
-  check((await evaluate('document.body.innerText')).includes('登录状态未更改'), 'login claimed success without a server');
+  check((await evaluate('document.body.innerText')).includes('开发预览不会登录真实账号'), 'preview login did not clearly stay isolated from real accounts');
+  check(!(await evaluate('document.body.innerText')).includes('登录成功'), 'preview login claimed success without a server');
   check(!(await evaluate('document.body.innerText')).includes('注册'), 'login exposes a self-registration entry');
   await click('a.back-button');
   await waitFor(() => evaluate('location.pathname === "/connect"'), 'login back button did not return to server connection');
@@ -201,7 +217,7 @@ try {
   check((await evaluate('document.body.innerText')).includes('公网地址须使用 HTTPS'), 'public HTTP address was not rejected');
   await evaluate('(() => { const input = document.querySelector("#server-address"); const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; setter.call(input, "http://192.168.1.10:3000"); input.dispatchEvent(new Event("input", { bubbles: true })); })()');
   await click('.connect-manual .mobile-button');
-  check((await evaluate('document.body.innerText')).includes('连接未建立'), 'valid LAN address was falsely reported as connected');
+  check((await evaluate('document.body.innerText')).includes('未发起连接请求'), 'preview connection did not stay isolated from the server');
   pass('manual connection expands, validates addresses, and does not claim a server connection');
 
   await navigate(`/practice${preview}`);
@@ -286,7 +302,8 @@ try {
   await click('button.sheet-done');
   check(!(await evaluate('!!document.querySelector("[role=dialog]")')), 'profile detail did not close');
   await click('.logout-button');
-  check((await evaluate('document.body.innerText')).includes('当前没有已登录账号'), 'logout claimed to change an unauthenticated session');
+  check((await evaluate('document.body.innerText')).includes('开发预览账号不会退出正式会话'), 'preview logout did not preserve the real session');
+  check(!(await evaluate('document.body.innerText')).includes('已退出登录'), 'preview logout claimed to revoke a real session');
   pass('mistake quantity and profile details/logout controls respond without saving fake data');
 
   await cdp('Emulation.setDeviceMetricsOverride', { width: 1536, height: 1024, deviceScaleFactor: 1, mobile: false });

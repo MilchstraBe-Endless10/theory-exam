@@ -77,6 +77,7 @@ button { color: inherit; }
 .topbar-actions { display: flex; height: 100%; align-items: center; gap: 27px; }
 .connection-status { display: flex; align-items: center; gap: 9px; color: #53627b; font-size: 14px; white-space: nowrap; }
 .status-dot { width: 10px; height: 10px; border: 1px solid #99a5b8; border-radius: 50%; background: #e8edf5; }
+.status-dot.is-online { border-color: #17a780; background: #23c897; box-shadow: 0 0 0 3px rgb(35 200 151 / 13%); }
 .user-menu { position: relative; height: 100%; }
 .user-menu summary { display: flex; height: 100%; align-items: center; gap: 10px; cursor: pointer; list-style: none; font-size: 15px; font-weight: 600; white-space: nowrap; }
 .user-menu summary::-webkit-details-marker { display: none; }
@@ -310,6 +311,22 @@ td { height: 40px; padding: 0 16px; border-bottom: 1px solid var(--border); }
   .review-state { gap: 3px; }
 }
 
+.session-expired-banner { position: fixed; z-index: 120; top: max(10px, env(safe-area-inset-top)); left: 50%; display: flex; min-height: 42px; align-items: center; gap: 14px; padding: 8px 12px 8px 16px; transform: translateX(-50%); border: 1px solid #f1d3a7; border-radius: 10px; background: #fffaf0; box-shadow: 0 5px 20px rgb(30 48 80 / 12%); color: #784c11; font-size: 13px; white-space: nowrap; }
+.session-expired-banner button { padding: 5px 8px; border: 0; border-radius: 6px; background: #fff0d3; color: #784c11; }
+.password-change-form { display: grid; gap: 12px; padding-top: 14px; }
+.password-change-form label { display: grid; gap: 6px; color: #435471; font-size: 12px; }
+.password-change-form input { width: 100%; min-height: 42px; padding: 0 11px; border: 1px solid #dfe5ef; border-radius: 8px; background: #fff; color: #1e2d49; font: inherit; }
+.password-change-form .sheet-done:disabled { opacity: .65; }
+.profile-bank-list { display: grid; gap: 8px; max-height: 52dvh; overflow: auto; padding: 12px 0; }
+.profile-bank-list > button { display: flex; min-height: 48px; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #e7ecf4; border-radius: 9px; background: #fff; color: #304260; text-align: left; }
+.profile-bank-list > button strong { font-size: 13px; }
+.profile-bank-list > button span { margin-left: auto; color: #7c8aa1; font-size: 11px; }
+.profile-bank-list > button.is-selected { border-color: #7893ff; background: #f3f6ff; }
+
+@media (max-width: 700px) {
+  .session-expired-banner { max-width: calc(100vw - 24px); white-space: normal; }
+}
+
 /* P0-M mobile screens. Desktop rules above remain the desktop source of truth. */
 .mobile-route { display: none; }
 .mobile-screen { min-height: 100dvh; background: var(--page-bg); color: var(--text-primary); }
@@ -502,6 +519,7 @@ td { height: 40px; padding: 0 16px; border-bottom: 1px solid var(--border); }
   .exam-bank-card { display: flex; min-height: 90px; align-items: center; gap: 11px; margin: 4px 0 10px; padding: 13px; border-radius: 11px; background: #edf2ff; }
   .exam-bank-card > div { display: grid; flex: 1; gap: 4px; }
   .exam-bank-card strong { font-size: 13px; }.exam-bank-card small { color: #657692; font-size: 10px; }
+  .exam-bank-select { max-width: 100%; border: 0; background: transparent; color: #1b2b49; font: inherit; font-size: 13px; font-weight: 700; }
   .exam-bank-card > svg { color: #6b7c98; }
   .exam-fact-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .exam-fact-grid > div { display: grid; min-height: 92px; justify-items: center; align-content: center; gap: 4px; border-radius: 10px; background: #fff; color: #516688; }
@@ -510,6 +528,7 @@ td { height: 40px; padding: 0 16px; border-bottom: 1px solid var(--border); }
   .exam-rules { margin-top: 20px; }
   .exam-rules h2 { margin: 0 0 8px; font-size: 14px; }
   .exam-rules ol { display: grid; gap: 7px; margin: 0; padding-left: 19px; color: #536581; font-size: 12px; line-height: 1.5; }
+  .exam-empty-rules { margin: 0; color: #657692; font-size: 12px; line-height: 1.6; }
   .exam-rule-note { display: flex; gap: 8px; margin-top: 14px; padding: 10px; border-radius: 9px; background: #f3f6fc; color: #647590; font-size: 10px; line-height: 1.5; }
   .settings-footer { margin-top: auto; padding: 18px 0 88px; }
   .settings-footer small { display: block; margin-top: 8px; color: #7f8ca2; font-size: 10px; text-align: center; }

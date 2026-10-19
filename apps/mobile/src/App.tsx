@@ -1,4 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import AdminPage from './pages/AdminPage';
+import { AuthProvider } from './auth/AuthContext';
 import AppShell from './components/AppShell';
 import DashboardPage from './pages/DashboardPage';
 import PlaceholderPage from './pages/PlaceholderPage';
@@ -17,8 +19,8 @@ import {
 } from './pages/MobilePages';
 
 export default function App() {
-  return (
-    <Routes>
+  return <AuthProvider><Routes>
+      <Route path="admin" element={<AdminPage />} />
       <Route path="start" element={<StartPage />} />
       <Route path="connect" element={<ConnectPage />} />
       <Route path="login" element={<LoginPage />} />
@@ -36,6 +38,5 @@ export default function App() {
         <Route path="me" element={<PersonalCenterPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
-    </Routes>
-  );
+    </Routes></AuthProvider>;
 }

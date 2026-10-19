@@ -1,0 +1,197 @@
+export interface Migration {
+  version: number;
+  name: string;
+  sql: string;
+}
+
+export const migrations: Migration[] = [
+  {
+    version: 1,
+    name: 'users_sessions_banks_imports_and_learning_links',
+    sql: `
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('admin', 'user')),
+        disabled INTEGER NOT NULL DEFAULT 0 CHECK (disabled IN (0, 1)),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+      );
+      CREATE INDEX sessions_user_id_idx ON sessions(user_id);
+      CREATE INDEX sessions_expires_at_idx ON sessions(expires_at);
+
+      CREATE TABLE question_banks (
+        id TEXT PRIMARY KEY,
+        bank_key TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+        active_version_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (active_version_id) REFERENCES bank_versions(id) ON DELETE RESTRICT
+      );
+
+      CREATE TABLE bank_versions (
+        id TEXT PRIMARY KEY,
+        bank_id TEXT NOT NULL REFERENCES question_banks(id) ON DELETE RESTRICT,
+        version_number INTEGER NOT NULL CHECK (version_number > 0),
+        file_fingerprint TEXT NOT NULL,
+        source_filename TEXT NOT NULL,
+        sheet_name TEXT NOT NULL,
+        question_count INTEGER NOT NULL CHECK (question_count >= 0),
+        type_counts_json TEXT NOT NULL,
+        created_by TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+        created_at TEXT NOT NULL,
+        UNIQUE (bank_id, version_number),
+        UNIQUE (bank_id, file_fingerprint)
+      );
+      CREATE INDEX bank_versions_bank_id_idx ON bank_versions(bank_id, version_number DESC);
+
+      CREATE TABLE questions (
+        id TEXT PRIMARY KEY,
+        bank_id TEXT NOT NULL REFERENCES question_banks(id) ON DELETE RESTRICT,
+        bank_version_id TEXT NOT NULL REFERENCES bank_versions(id) ON DELETE RESTRICT,
+        question_type TEXT NOT NULL CHECK (question_type IN ('single', 'multiple', 'judgement')),
+        source_type_label TEXT NOT NULL,
+        stem TEXT NOT NULL,
+        normalized_stem TEXT NOT NULL,
+        options_json TEXT NOT NULL,
+        answer_json TEXT NOT NULL,
+        raw_answer TEXT NOT NULL,
+        source_filename TEXT NOT NULL,
+        source_sheet TEXT NOT NULL,
+        source_row INTEGER NOT NULL CHECK (source_row > 0),
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX questions_version_type_idx ON questions(bank_version_id, question_type, source_row);
+      CREATE INDEX questions_bank_stem_idx ON questions(bank_id, normalized_stem);
+
+      CREATE TABLE import_jobs (
+        id TEXT PRIMARY KEY,
+        bank_id TEXT REFERENCES question_banks(id) ON DELETE RESTRICT,
+        requested_bank_key TEXT NOT NULL,
+        requested_bank_name TEXT NOT NULL,
+        file_fingerprint TEXT NOT NULL,
+        source_filename TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('blocked', 'pending_confirmation', 'imported', 'duplicate')),
+        sheet_names_json TEXT NOT NULL,
+        selected_sheet TEXT NOT NULL DEFAULT '',
+        question_count INTEGER NOT NULL DEFAULT 0,
+        type_counts_json TEXT NOT NULL,
+        missing_answer_count INTEGER NOT NULL DEFAULT 0,
+        errors_json TEXT NOT NULL,
+        duplicate_stems_json TEXT NOT NULL,
+        staged_questions_json TEXT,
+        created_by TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+        created_at TEXT NOT NULL,
+        confirmed_at TEXT
+      );
+      CREATE INDEX import_jobs_created_at_idx ON import_jobs(created_at DESC);
+      CREATE INDEX import_jobs_fingerprint_idx ON import_jobs(bank_id, file_fingerprint);
+
+      CREATE TABLE exam_rules (
+        id TEXT PRIMARY KEY,
+        bank_id TEXT NOT NULL REFERENCES question_banks(id) ON DELETE RESTRICT,
+        bank_version_id TEXT REFERENCES bank_versions(id) ON DELETE RESTRICT,
+        single_count INTEGER NOT NULL CHECK (single_count >= 0),
+        single_points REAL NOT NULL CHECK (single_points >= 0),
+        multiple_count INTEGER NOT NULL CHECK (multiple_count >= 0),
+        multiple_points REAL NOT NULL CHECK (multiple_points >= 0),
+        judgement_count INTEGER NOT NULL CHECK (judgement_count >= 0),
+        judgement_points REAL NOT NULL CHECK (judgement_points >= 0),
+        duration_minutes INTEGER NOT NULL CHECK (duration_minutes > 0),
+        passing_score REAL NOT NULL DEFAULT 60 CHECK (passing_score >= 0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (bank_id, bank_version_id)
+      );
+
+      CREATE TABLE practice_attempts (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+        bank_id TEXT NOT NULL REFERENCES question_banks(id) ON DELETE RESTRICT,
+        bank_version_id TEXT NOT NULL REFERENCES bank_versions(id) ON DELETE RESTRICT,
+        question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE RESTRICT,
+        mode TEXT NOT NULL,
+        answer_json TEXT NOT NULL,
+        is_correct INTEGER NOT NULL CHECK (is_correct IN (0, 1)),
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX practice_attempts_user_bank_idx ON practice_attempts(user_id, bank_id, created_at);
+
+      CREATE TABLE favorites (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+        bank_id TEXT NOT NULL REFERENCES question_banks(id) ON DELETE RESTRICT,
+        bank_version_id TEXT NOT NULL REFERENCES bank_versions(id) ON DELETE RESTRICT,
+        question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE RESTRICT,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, question_id)
+      );
+
+      CREATE TABLE mistake_states (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+        bank_id TEXT NOT NULL REFERENCES question_banks(id) ON DELETE RESTRICT,
+        bank_version_id TEXT NOT NULL REFERENCES bank_versions(id) ON DELETE RESTRICT,
+        question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE RESTRICT,
+        wrong_count INTEGER NOT NULL DEFAULT 0 CHECK (wrong_count >= 0),
+        consecutive_correct_rounds INTEGER NOT NULL DEFAULT 0 CHECK (consecutive_correct_rounds BETWEEN 0 AND 2),
+        mastery_status TEXT NOT NULL DEFAULT 'review' CHECK (mastery_status IN ('review', 'reinforcing', 'mastered')),
+        last_review_round_id TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, question_id)
+      );
+
+      CREATE TABLE exam_sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+        bank_id TEXT NOT NULL REFERENCES question_banks(id) ON DELETE RESTRICT,
+        bank_version_id TEXT NOT NULL REFERENCES bank_versions(id) ON DELETE RESTRICT,
+        rules_snapshot_json TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('created', 'in_progress', 'submitted', 'expired', 'voided')),
+        started_at TEXT,
+        deadline_at TEXT,
+        submitted_at TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX exam_sessions_user_bank_idx ON exam_sessions(user_id, bank_id, created_at DESC);
+
+      CREATE TABLE exam_question_snapshots (
+        id TEXT PRIMARY KEY,
+        exam_session_id TEXT NOT NULL REFERENCES exam_sessions(id) ON DELETE RESTRICT,
+        question_id TEXT REFERENCES questions(id) ON DELETE RESTRICT,
+        position INTEGER NOT NULL CHECK (position > 0),
+        snapshot_json TEXT NOT NULL,
+        answer_json TEXT NOT NULL,
+        points REAL NOT NULL CHECK (points >= 0),
+        UNIQUE (exam_session_id, position)
+      );
+
+      CREATE TABLE exam_answers (
+        exam_session_id TEXT NOT NULL REFERENCES exam_sessions(id) ON DELETE RESTRICT,
+        snapshot_id TEXT NOT NULL REFERENCES exam_question_snapshots(id) ON DELETE RESTRICT,
+        answer_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (exam_session_id, snapshot_id)
+      );
+
+      CREATE TABLE exam_results (
+        exam_session_id TEXT PRIMARY KEY REFERENCES exam_sessions(id) ON DELETE RESTRICT,
+        total_score REAL NOT NULL,
+        correct_count INTEGER NOT NULL,
+        wrong_count INTEGER NOT NULL,
+        unanswered_count INTEGER NOT NULL,
+        duration_seconds INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    `,
+  },
+];

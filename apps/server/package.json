@@ -1,0 +1,38 @@
+{
+  "name": "theory-exam-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "test": "tsx --test test/*.test.ts",
+    "test:browser": "node scripts/browser-flow-smoke.mjs",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "tsx src/cli.ts migrate",
+    "db:status": "tsx src/cli.ts status",
+    "db:clean-test": "tsx src/cli.ts clean-test",
+    "admin:init": "tsx src/cli.ts admin:init",
+    "verify:local-import": "tsx scripts/verify-local-import.ts"
+  },
+  "dependencies": {
+    "@fastify/multipart": "^9.2.1",
+    "@fastify/rate-limit": "^10.3.0",
+    "@fastify/static": "^10.1.6",
+    "@node-rs/argon2": "^2.0.2",
+    "exceljs": "^4.4.0",
+    "fastify": "^5.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
+  }
+}

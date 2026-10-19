@@ -7,6 +7,9 @@ import {
   IconStar, IconTrophy, IconUser, IconUserFilled, IconWifi, IconX,
 } from '@tabler/icons-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
+import { useBanks } from '../services/banks';
+import { ApiError, apiRequest, clearSession, persistentSession, previewMode, savedServerAddress, saveServerAddress, saveSession, type ApiSession } from '../services/api';
 
 const preview = import.meta.env.DEV && new URLSearchParams(window.location.search).get('preview') === '1';
 const href = (path: string) => preview ? `${path}${path.includes('?') ? '&' : '?'}preview=1` : path;
@@ -49,6 +52,8 @@ function MobileButton({ children, to, onClick, secondary = false, disabled = fal
 
 function MobileHomePage() {
   const notice = useNotice();
+  const { user } = useAuth();
+  const { activeBank: bank, loading, error } = useBanks();
   const stat = (value: string) => preview ? value : '—';
   const quick = [
     { title: '日常练习', icon: IconPencil, to: '/practice', tone: 'green' },
@@ -60,7 +65,7 @@ function MobileHomePage() {
   ];
   return <Screen className="home-screen">
     <header className="home-brand"><span className="home-brand-mark"><IconBook size={20} /></span><strong>理论考试</strong><button aria-label="通知" onClick={() => notice.notify('当前没有新通知')}><IconBell size={20} /></button></header>
-    <div className="home-greeting"><h1>{preview ? '你好，学习用户' : '你好，欢迎学习'}</h1><p>{preview ? '从今天的进步开始。' : '连接本地服务后开始记录学习进度'}</p></div>
+    <div className="home-greeting"><h1>{preview ? '你好，学习用户' : user ? `你好，${user.username}` : '你好，欢迎学习'}</h1><p>{preview ? '从今天的进步开始。' : bank ? `${bank.name} · 学习记录由本地服务端保存` : error || (loading ? '正在读取已启用题库…' : user ? '本机服务端暂无已启用题库' : '连接并登录本地服务后读取题库')}</p></div>
     <PreviewBadge />
     <section className="mobile-stat-grid" aria-label="学习概况">
       <article className="mobile-stat-card tone-green"><IconChartBar size={19} /><strong>{stat('426')}</strong><span>{preview ? '已学习' : '已学习题目'}</span></article>
@@ -68,7 +73,7 @@ function MobileHomePage() {
       <article className="mobile-stat-card tone-red"><IconFileText size={19} /><strong>{stat('38')}</strong><span>待复习</span></article>
     </section>
     <section className="mobile-continue-card">
-      <div className="mobile-card-heading"><span className="mobile-icon-box tone-blue"><IconBook size={22} /></span><div><strong>继续练习</strong><small>{preview ? '顺序练习 · 按题库顺序逐题练习' : '练习进度将在连接服务端后显示'}</small></div></div>
+      <div className="mobile-card-heading"><span className="mobile-icon-box tone-blue"><IconBook size={22} /></span><div><strong>继续练习</strong><small>{preview ? '顺序练习 · 按题库顺序逐题练习' : bank ? `${bank.name} · ${bank.activeVersion?.questionCount ?? 0} 道题` : '连接服务端并导入题库后开始'}</small></div></div>
       <div className="mobile-progress-label"><span>{preview ? '已完成 426 / 1283 题' : '尚无练习记录'}</span><span>{preview ? '33.2%' : '—'}</span></div>
       <div className="mobile-progress-track"><span style={{ width: preview ? '33.2%' : '0%' }} /></div>
       <MobileButton to={href('/practice')}>继续刷题 <IconChevronRight size={18} /></MobileButton>
@@ -100,24 +105,37 @@ function allowedServerAddress(value: string) {
 }
 
 export function ConnectPage() {
-  const [address, setAddress] = useState('');
+  const [address, setAddress] = useState(savedServerAddress());
   const [error, setError] = useState('');
   const [manualOpen, setManualOpen] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const notice = useNotice();
-  const connect = () => {
+  const { refreshServer } = useAuth();
+  const connect = async () => {
     setError('');
     if (!allowedServerAddress(address)) {
       setError('请输入有效地址。公网地址须使用 HTTPS；HTTP 仅适用于本机或局域网地址。');
       return;
     }
-    notice.notify('地址格式有效。当前尚未接入服务连通性检测，连接未建立。');
+    if (previewMode()) { notice.notify('开发预览与正式服务端隔离，未发起连接请求。'); return; }
+    setConnecting(true);
+    try {
+      const normalized = new URL(address.trim()).toString().replace(/\/+$/, '');
+      const health = await apiRequest<{ status: string; database: { status: string } }>('/api/health', { base: normalized, auth: false, timeoutMs: 5000 });
+      if (health.status !== 'ok' || health.database?.status !== 'ok') throw new ApiError('服务器健康检查未通过。', 'HEALTH_CHECK_FAILED');
+      saveServerAddress(normalized);
+      await refreshServer();
+      notice.notify('服务器连接成功，可以登录。');
+    } catch (connectionError) {
+      setError(connectionError instanceof Error ? connectionError.message : '服务器连接失败。');
+    } finally { setConnecting(false); }
   };
   return <Screen className="connect-screen" immersive>
     <Header back="/start" />
     <div className="auth-title"><h1>连接服务器</h1><p>请选择连接方式，连接你的学习服务器</p></div>
     <button className="connect-option" onClick={() => notice.notify('扫码功能将在 Android 相机权限接入后提供。')}><span className="connect-option-icon tone-blue"><IconQrcode size={28} /></span><span><strong>扫码连接</strong><small>扫描电脑端二维码<br />快速连接服务器</small></span><IconChevronRight className="option-arrow" size={18} /></button>
     <button className="connect-option" aria-expanded={manualOpen} onClick={() => setManualOpen(value => !value)}><span className="connect-option-icon tone-blue"><IconLink size={26} /></span><span><strong>手动连接</strong><small>输入服务器地址<br />进行连接</small></span><IconChevronRight className="option-arrow" size={18} /></button>
-    {manualOpen && <section className="connect-manual"><label htmlFor="server-address">服务器地址</label><input id="server-address" value={address} onChange={e => setAddress(e.target.value)} placeholder="https://example.com" inputMode="url" autoCapitalize="none" />{error && <p className="form-error" role="alert">{error}</p>}<MobileButton onClick={connect}>验证并连接</MobileButton></section>}
+    {manualOpen && <section className="connect-manual"><label htmlFor="server-address">服务器地址</label><input id="server-address" value={address} onChange={e => setAddress(e.target.value)} placeholder="https://example.com" inputMode="url" autoCapitalize="none" />{error && <p className="form-error" role="alert">{error}</p>}<MobileButton onClick={connect} disabled={connecting}>{connecting ? '正在检查…' : '验证并连接'}</MobileButton></section>}
     <Link className="auth-footnote" to={href('/login')}>连接后即可登录你的账号</Link>
     <Toast message={notice.message} />
   </Screen>;
@@ -127,20 +145,36 @@ export function LoginPage() {
   const [remember, setRemember] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const notice = useNotice();
-  const submit = (event: FormEvent) => {
+  const navigate = useNavigate();
+  const { serverAddress, setUser } = useAuth();
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError('');
-    notice.notify('尚未连接服务器，无法验证账号；登录状态未更改。');
+    if (previewMode()) { notice.notify('开发预览不会登录真实账号。'); return; }
+    if (!serverAddress) { setError('请先连接服务器，再使用管理员创建的账号登录。'); return; }
+    setSubmitting(true);
+    try {
+      const session = await apiRequest<ApiSession>('/api/auth/login', { base: serverAddress, method: 'POST', auth: false, body: { username, password, remember } });
+      saveSession(session, remember);
+      setUser(session.user);
+      setPassword('');
+      navigate('/', { replace: true });
+    } catch (loginError) {
+      setError(loginError instanceof Error ? loginError.message : '登录失败，请检查服务器连接。');
+    } finally { setSubmitting(false); }
   };
   return <Screen className="login-screen" immersive>
     <Header back="/connect" />
     <div className="login-content"><h1>欢迎回来</h1><p>登录你的账号，继续学习</p><form onSubmit={submit}>
-      <label className="input-wrap"><IconUser size={19} /><input aria-label="用户名" placeholder="用户名" autoComplete="username" /></label>
-      <label className="input-wrap"><IconLock size={19} /><input aria-label="密码" placeholder="密码" type={showPassword ? 'text' : 'password'} autoComplete="current-password" /><button type="button" aria-label={showPassword ? '隐藏密码' : '显示密码'} onClick={() => setShowPassword(v => !v)}>{showPassword ? <IconEyeOff size={19} /> : <IconEye size={19} />}</button></label>
+      <label className="input-wrap"><IconUser size={19} /><input aria-label="用户名" placeholder="用户名" autoComplete="username" value={username} onChange={event => setUsername(event.target.value)} required /></label>
+      <label className="input-wrap"><IconLock size={19} /><input aria-label="密码" placeholder="密码" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required /><button type="button" aria-label={showPassword ? '隐藏密码' : '显示密码'} onClick={() => setShowPassword(v => !v)}>{showPassword ? <IconEyeOff size={19} /> : <IconEye size={19} />}</button></label>
       <label className="remember-row"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />记住我</label>
       {error && <p className="form-error" role="alert">{error}</p>}
-      <MobileButton type="submit">登录</MobileButton>
+      <MobileButton type="submit" disabled={submitting}>{submitting ? '正在登录…' : '登录'}</MobileButton>
     </form><small className="auth-footnote">仅支持管理员创建的账号登录</small></div>
     <Toast message={notice.message} />
   </Screen>;
@@ -158,10 +192,19 @@ const practiceChoices = [
 
 export function PracticeSelectionPage() {
   const notice = useNotice();
+  const { activeBank: bank, loading, error } = useBanks();
+  const descriptions: Record<string, string> = {
+    all: '按照题库顺序逐题练习',
+    single: preview ? '共 845 题' : bank ? `共 ${bank.activeVersion?.typeCounts.single ?? 0} 题` : '连接并登录后读取题量',
+    multiple: preview ? '共 38 题' : bank ? `共 ${bank.activeVersion?.typeCounts.multiple ?? 0} 题` : '连接并登录后读取题量',
+    truefalse: preview ? '共 400 题' : bank ? `共 ${bank.activeVersion?.typeCounts.judgement ?? 0} 题` : '连接并登录后读取题量',
+    mistakes: preview ? '待复习 38 题' : '连接服务端后读取错题',
+    favorites: preview ? '共 12 题' : '连接服务端后读取收藏',
+  };
   return <ResponsivePage desktop={<DesktopPlaceholder title="日常练习" />}>
     <Screen className="list-screen" immersive><Header title="日常练习" back="/" right={<button className="header-icon" aria-label="更多" onClick={() => notice.notify('练习筛选可组合使用。')}><IconDots size={21} /></button>} /><PreviewBadge /><div className="practice-list">
-      {practiceChoices.map(({ title, desc, icon: Icon, tone, type }) => <Link className="practice-choice" key={title} to={href(`/practice/answer?type=${type}`)}><span className={`choice-icon tone-${tone}`}><Icon size={21} /></span><span className="choice-copy"><strong>{title}</strong><small>{desc}</small></span><IconChevronRight className="choice-chevron" size={18} /></Link>)}
-    </div><div className="mobile-info-note"><IconInfoCircle size={16} />题量为题库结构说明；实际练习需连接本地服务端。</div><Toast message={notice.message} /></Screen>
+      {practiceChoices.map(({ title, desc, icon: Icon, tone, type }) => <Link className="practice-choice" key={title} to={href(`/practice/answer?type=${type}`)}><span className={`choice-icon tone-${tone}`}><Icon size={21} /></span><span className="choice-copy"><strong>{title}</strong><small>{type === 'all' ? desc : descriptions[type] ?? desc}</small></span><IconChevronRight className="choice-chevron" size={18} /></Link>)}
+    </div><div className="mobile-info-note"><IconInfoCircle size={16} />{error || (loading ? '正在读取服务端题库…' : bank ? `当前题库：${bank.name}。正式练习答题将在后续阶段接入。` : '题量仅在已登录且服务端配置启用题库后显示。')}</div><Toast message={notice.message} /></Screen>
   </ResponsivePage>;
 }
 
@@ -214,12 +257,17 @@ export function PracticeResultPage() {
 
 export function ExamSettingsPage() {
   const notice = useNotice();
-  const start = () => preview ? window.location.assign(href('/exams/answer')) : notice.notify('尚未连接服务端，不能创建真实考试。');
+  const { banks, activeBank: bank, loading, error, selectBank } = useBanks();
+  const rules = bank?.examRules;
+  const examCount = rules ? rules.singleCount + rules.multipleCount + rules.judgementCount : null;
+  const examScore = rules ? rules.singleCount * rules.singlePoints + rules.multipleCount * rules.multiplePoints + rules.judgementCount * rules.judgementPoints : null;
+  const start = () => preview ? window.location.assign(href('/exams/answer')) : notice.notify(bank && rules ? '正式组卷与考试创建将在后续阶段接入。' : '当前题库尚未配置可用的考试规则。');
+  const ruleDescription = (count: number, points: number) => `${count} 题（每题 ${points} 分）`;
   return <ResponsivePage desktop={<DesktopPlaceholder title="模拟考试" />}><Screen className="exam-settings-screen" immersive><Header back="/" /><h1 className="exam-settings-title">模拟考试</h1><PreviewBadge />
-    <section className="exam-bank-card"><span className="choice-icon tone-blue"><IconFileText size={23} /></span><div><strong>四级理论题库</strong><small>全真模拟 · 随机组卷 · 限时完成</small></div><IconChevronRight size={18} /></section>
-    <section className="exam-fact-grid"><div><IconFileText size={19} /><strong>180</strong><small>题目数量</small></div><div><IconClockHour4 size={19} /><strong>90 分钟</strong><small>考试时长</small></div><div><IconTrophy size={19} /><strong>100 分</strong><small>满分</small></div></section>
-    <section className="exam-rules"><h2>考试说明</h2><ol><li>单选题：120 题（每题 0.5 分）</li><li>多选题：20 题（每题 1 分）</li><li>判断题：40 题（每题 0.5 分）</li><li>总分：100 分，考试时间：90 分钟</li></ol><div className="exam-rule-note"><IconShieldCheck size={18} />考试计时与评分由服务端负责。正式考试不可暂停。</div></section>
-    <div className="settings-footer"><MobileButton onClick={start}>开始模拟考试 <IconChevronRight size={18} /></MobileButton><small>{preview ? '开发预览：不会创建或提交真实考试' : '连接服务端后开始真实考试'}</small></div><Toast message={notice.message} />
+    <section className="exam-bank-card"><span className="choice-icon tone-blue"><IconFileText size={23} /></span><div>{banks.length > 1 ? <select className="exam-bank-select" aria-label="选择题库" value={bank?.id ?? ''} onChange={event => selectBank(event.target.value)}>{banks.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select> : <strong>{bank?.name ?? (loading ? '正在读取题库…' : '暂无已启用题库')}</strong>}<small>{bank ? `版本 ${bank.activeVersion?.versionNumber ?? '—'} · ${bank.activeVersion?.questionCount ?? 0} 道题` : error || (loading ? '正在读取服务端题库' : '请连接并登录，或联系管理员导入题库')}</small></div>{banks.length > 1 && <IconChevronRight size={18} />}</section>
+    {rules ? <><section className="exam-fact-grid"><div><IconFileText size={19} /><strong>{examCount}</strong><small>题目数量</small></div><div><IconClockHour4 size={19} /><strong>{rules.durationMinutes} 分钟</strong><small>考试时长</small></div><div><IconTrophy size={19} /><strong>{examScore} 分</strong><small>满分</small></div></section>
+    <section className="exam-rules"><h2>考试说明</h2><ol><li>单选题：{ruleDescription(rules.singleCount, rules.singlePoints)}</li><li>多选题：{ruleDescription(rules.multipleCount, rules.multiplePoints)}</li><li>判断题：{ruleDescription(rules.judgementCount, rules.judgementPoints)}</li><li>总分：{examScore} 分，考试时间：{rules.durationMinutes} 分钟</li></ol><div className="exam-rule-note"><IconShieldCheck size={18} />正式考试计时与评分由服务端负责；当前阶段不会启动或暂停正式考试。</div></section></> : <section className="exam-rules"><h2>考试规则</h2><p className="exam-empty-rules">{preview ? '开发预览规则未配置。' : bank ? '当前题库版本尚未配置考试规则，请联系本机管理员。' : error || '连接并登录后读取已启用题库和对应考试规则。'}</p></section>}
+    <div className="settings-footer"><MobileButton onClick={start} disabled={!preview && (!bank || !rules)}>开始模拟考试 <IconChevronRight size={18} /></MobileButton><small>{preview ? '开发预览：不会创建或提交真实考试' : rules ? '考试组卷与提交功能将在后续阶段接入' : '没有可用规则时无法开始考试'}</small></div><Toast message={notice.message} />
   </Screen></ResponsivePage>;
 }
 
@@ -286,22 +334,75 @@ function FilterRow({ title, desc, icon: Icon, tone, checked, onClick }: { title:
 export function PersonalCenterPage() {
   const notice = useNotice();
   const [panel, setPanel] = useState('');
+  const [banks, setBanks] = useState<Array<{ id: string; name: string; activeVersion: { questionCount: number } | null }>>([]);
+  const [selectedBank, setSelectedBank] = useState(localStorage.getItem('theory-exam.selected-bank') ?? '');
+  const [panelError, setPanelError] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const { user, serverAddress, serverStatus, setUser } = useAuth();
+  const navigate = useNavigate();
   const rows = [
     { title: '学习统计', detail: '查看学习进度', icon: IconChartBar },
     { title: '我的收藏', detail: preview ? '共 12 题' : '连接服务端后显示', icon: IconStar },
     { title: '错题本', detail: preview ? '待复习 38 题' : '连接服务端后显示', icon: IconFileText },
     { title: '考试记录', detail: preview ? '共 12 次' : '连接服务端后显示', icon: IconClipboardIcon },
-    { title: '题库切换', detail: '当前：四级理论题库', icon: IconRefresh },
-    { title: '连接设置', detail: '未连接本地服务', icon: IconLink },
+    { title: '题库切换', detail: selectedBank ? '已选择' : '读取服务端题库', icon: IconRefresh },
+    { title: '连接设置', detail: serverAddress ? serverAddress : '未连接本地服务', icon: IconLink },
     { title: '修改密码', detail: '', icon: IconLock },
     { title: '关于应用', detail: 'V1.0.0', icon: IconInfoCircle },
   ];
+  const openPanel = async (title: string) => {
+    setPanelError('');
+    setPanel(title);
+    if (title !== '题库切换' || !user || preview) return;
+    try {
+      const result = await apiRequest<{ items: Array<{ id: string; name: string; activeVersion: { questionCount: number } | null }> }>('/api/banks');
+      setBanks(result.items);
+    } catch (error) { setPanelError(error instanceof Error ? error.message : '题库读取失败。'); }
+  };
+  const logout = async () => {
+    if (!user) { notice.notify(preview ? '开发预览账号不会退出正式会话。' : '当前没有已登录账号。'); return; }
+    if (preview) { notice.notify('开发预览不会修改正式登录状态。'); return; }
+    try {
+      await apiRequest<{ ok: true }>('/api/auth/logout', { method: 'POST', body: {} });
+      clearSession();
+      setUser(null);
+      notice.notify('已退出登录。');
+    } catch (error) { notice.notify(error instanceof Error ? error.message : '服务器未确认退出，请重试。'); }
+  };
+  const changePassword = async (event: FormEvent) => {
+    event.preventDefault();
+    setPanelError('');
+    if (newPassword !== confirmPassword) { setPanelError('两次输入的新密码不一致。'); return; }
+    if (preview || !user) { setPanelError('请先连接服务器并登录。'); return; }
+    setChangingPassword(true);
+    try {
+      const result = await apiRequest<ApiSession>('/api/auth/password', { method: 'POST', body: { currentPassword, newPassword } });
+      saveSession(result, persistentSession());
+      setUser(result.user);
+      setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
+      setPanel('');
+      notice.notify('密码已修改，其他登录会话已撤销。');
+    } catch (error) { setPanelError(error instanceof Error ? error.message : '密码修改失败。'); }
+    finally { setChangingPassword(false); }
+  };
+  const chooseBank = (id: string) => {
+    setSelectedBank(id);
+    localStorage.setItem('theory-exam.selected-bank', id);
+  };
   return <ResponsivePage desktop={<DesktopPlaceholder title="我的" />}><Screen className="profile-screen"><header className="profile-header"><h1>我的</h1><button className="header-icon" aria-label="通知" onClick={() => notice.notify('当前没有新通知')}><IconBell size={20} /></button></header><PreviewBadge />
-    <section className="profile-card"><span className="profile-avatar"><IconUserFilled size={24} /></span><div><strong>{preview ? '学习用户' : '未登录'}</strong><small>{preview ? '预览账号 · 不代表真实用户' : '连接服务器后登录账号'}</small></div></section>
-    <section className="profile-links">{rows.map(({ title, detail, icon: Icon }) => <button key={title} className="profile-row" onClick={() => setPanel(title)}><Icon size={19} /><strong>{title}</strong>{detail && <span>{detail}</span>}<IconChevronRight className="profile-chevron" size={17} /></button>)}</section>
-    <button className="logout-button" onClick={() => notice.notify('当前没有已登录账号。')}><IconLogout size={19} />退出登录</button>
+    <section className="profile-card"><span className="profile-avatar"><IconUserFilled size={24} /></span><div><strong>{preview ? '学习用户' : user?.username ?? '未登录'}</strong><small>{preview ? '预览账号 · 不代表真实用户' : user ? (user.role === 'admin' ? '本机管理员账号' : '已连接服务端账号') : '连接服务器后登录账号'}</small></div></section>
+    <section className="profile-links">{rows.map(({ title, detail, icon: Icon }) => <button key={title} className="profile-row" onClick={() => title === '连接设置' ? navigate('/connect') : void openPanel(title)}><Icon size={19} /><strong>{title}</strong>{detail && <span>{detail}</span>}<IconChevronRight className="profile-chevron" size={17} /></button>)}</section>
+    <button className="logout-button" onClick={() => void logout()}><IconLogout size={19} />退出登录</button>
     <Toast message={notice.message} />
-    {panel && <div className="sheet-backdrop" role="presentation" onClick={() => setPanel('')}><section className="profile-sheet" role="dialog" aria-modal="true" aria-label={panel} onClick={e => e.stopPropagation()}><div className="sheet-heading"><strong>{panel}</strong><button aria-label="关闭" onClick={() => setPanel('')}><IconX size={21} /></button></div><div className="empty-state compact"><IconWifi size={24} /><strong>{preview ? '开发预览中的示例信息' : '需要连接本地服务端'}</strong><span>{preview ? '该示例数据不会保存为学习记录。' : '当前没有账号数据或服务器连接。'}</span></div><button className="sheet-done" onClick={() => setPanel('')}>知道了</button></section></div>}
+    {panel && <div className="sheet-backdrop" role="presentation" onClick={() => setPanel('')}><section className="profile-sheet" role="dialog" aria-modal="true" aria-label={panel} onClick={e => e.stopPropagation()}><div className="sheet-heading"><strong>{panel}</strong><button aria-label="关闭" onClick={() => setPanel('')}><IconX size={21} /></button></div>
+      {panel === '修改密码' && user && !preview ? <form className="password-change-form" onSubmit={changePassword}><label>当前密码<input type="password" autoComplete="current-password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} required /></label><label>新密码（至少 12 位）<input type="password" autoComplete="new-password" minLength={12} value={newPassword} onChange={event => setNewPassword(event.target.value)} required /></label><label>确认新密码<input type="password" autoComplete="new-password" minLength={12} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} required /></label>{panelError && <p className="form-error" role="alert">{panelError}</p>}<button className="sheet-done" disabled={changingPassword}>{changingPassword ? '正在保存…' : '修改密码'}</button></form>
+        : panel === '题库切换' && user && !preview ? <div className="profile-bank-list">{panelError && <p className="form-error" role="alert">{panelError}</p>}{banks.length ? banks.map(bank => <button key={bank.id} className={selectedBank === bank.id ? 'is-selected' : ''} onClick={() => chooseBank(bank.id)}><strong>{bank.name}</strong><span>{bank.activeVersion?.questionCount ?? 0} 道题</span>{selectedBank === bank.id && <IconCheck size={18} />}</button>) : <div className="empty-state compact"><IconBook size={24} /><strong>服务端暂无已启用题库</strong><span>请联系本机管理员导入题库。</span></div>}</div>
+          : <div className="empty-state compact"><IconWifi size={24} /><strong>{preview ? '开发预览中的示例信息' : user ? (panel === '题库切换' ? '题库列表暂不可用' : `服务端状态：${serverStatus === 'connected' ? '已连接' : '连接异常'}`) : '需要连接并登录本地服务端'}</strong><span>{preview ? '该示例数据不会访问或修改正式服务端。' : serverAddress || '当前没有真实账号数据或服务器连接。'}</span></div>}
+      {panel !== '修改密码' && <button className="sheet-done" onClick={() => setPanel('')}>知道了</button>}
+    </section></div>}
   </Screen></ResponsivePage>;
 }
 
