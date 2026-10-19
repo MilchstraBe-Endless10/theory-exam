@@ -1,4 +1,4 @@
-package com.getcapacitor.myapp;
+package com.theoryexam.mobile.dev;
 
 import static org.junit.Assert.*;
 
