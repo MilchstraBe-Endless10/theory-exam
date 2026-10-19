@@ -4,7 +4,7 @@
 
 - 日期：2026-10-19。
 - 阶段：P4 错题复习与掌握状态已完成实现、验收和 GitHub 同步；Issue #5/#6 已关闭。暂停等待 P5 授权。
-- Git 基线：开发前 `main` 与 `origin/main` 同步于 `51bfeaa41e0c15b5146c99a51528f3f7ab399d89`。P4 实现提交 `35466874d28cb7f018df72bd46e4586c5f93e7f3`（https://github.com/MilchstraBe-Endless10/theory-exam/commit/35466874d28cb7f018df72bd46e4586c5f93e7f3）已普通推送；推送后 `HEAD`、`origin/main`、`git ls-remote` 和 GitHub API SHA 一致。随后记忆同步提交会在当前阶段末尾完成。
+- Git 基线：开发前 `main` 与 `origin/main` 同步于 `51bfeaa41e0c15b5146c99a51528f3f7ab399d89`。P4 实现提交 `35466874d28cb7f018df72bd46e4586c5f93e7f3`（https://github.com/MilchstraBe-Endless10/theory-exam/commit/35466874d28cb7f018df72bd46e4586c5f93e7f3）已普通推送；推送后 `HEAD`、`origin/main`、`git ls-remote` 和 GitHub API SHA 一致。另有独立记忆同步提交更新本文件与中期记忆。
 - Issue #6 已修复：`db:status` 使用只读路径，不建库、不迁移、不写数据；数据库不存在、迁移表缺失和版本超前均明确报告。`db:migrate` 独立执行，已有数据升级前先创建 SQLite 一致性备份。隔离 V3/V4、缺迁移表、版本超前、缺失数据库和 WAL 未检查点场景均有测试，确认状态查询不更改文件/schema/version/data。
 - 新增 V5 增量迁移，未修改 V1–V4。复习轮次固定账号、题库版本、条件、题目及顺序，持久化提交、结果、时间和状态；退出后可恢复，完成后可查历史。当前错题状态按用户/题目唯一；不同轮次答对依次从待复习到巩固中再到已掌握，任何正式答错回待复习。同轮重试仅计一次；普通练习/考试答对不推进掌握。
 - 复习 API 支持创建、恢复、答题、退出、历史和统计；题型、状态、随机/薄弱优先和 10/20/全部组合由服务端筛选。复习提交前不泄露答案，确认写入后返回反馈。手机错题设置/答题/反馈/历史、桌面错题本及统计已接入服务端；Preview 仍隔离。
