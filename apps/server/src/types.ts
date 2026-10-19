@@ -28,6 +28,7 @@ declare module 'fastify' {
     localOnly: preHandlerHookHandler;
     requireSession: preHandlerHookHandler;
     requireAdmin: preHandlerHookHandler;
+    examNow: () => Date;
   }
   interface FastifyRequest {
     authUser?: AuthenticatedUser;

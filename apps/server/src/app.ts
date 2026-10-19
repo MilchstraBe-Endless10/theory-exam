@@ -12,16 +12,19 @@ import { hashPassword } from './security.js';
 import { registerAdminRoutes } from './routes/admin-routes.js';
 import { registerAuthRoutes } from './routes/auth-routes.js';
 import { registerPracticeRoutes } from './routes/practice-routes.js';
+import { registerExamRoutes } from './routes/exam-routes.js';
+import { settleExpiredExams } from './services/exam-service.js';
 
 export interface BuildAppOptions {
   config?: ServerConfig;
   databasePath?: string;
   staticDir?: string;
   logger?: boolean | FastifyServerOptions['logger'];
+  now?: () => Date;
 }
 
-function errorPayload(code: string, message: string) {
-  return { error: { code, message } };
+function errorPayload(code: string, message: string, details?: Record<string, unknown>) {
+  return { error: { code, message, ...(details ? { details } : {}) } };
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -52,6 +55,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.decorate('localOnly', requireLocal);
   app.decorate('requireSession', requireSession);
   app.decorate('requireAdmin', requireAdmin);
+  const examNow = options.now ?? (() => new Date());
+  app.decorate('examNow', examNow);
+  settleExpiredExams(db, examNow());
+  const expiryTimer = setInterval(() => {
+    try { settleExpiredExams(db, examNow()); }
+    catch (error) { app.log.error({ err: error }, 'expired exam settlement failed'); }
+  }, 15_000);
+  expiryTimer.unref();
+  app.addHook('onClose', async () => clearInterval(expiryTimer));
   app.addHook('onClose', async () => db.close());
 
   app.addHook('onRequest', async (request, reply) => {
@@ -69,7 +81,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.setErrorHandler((error, request, reply) => {
-    if (error instanceof HttpError) return reply.code(error.statusCode).send(errorPayload(error.code, error.message));
+    if (error instanceof HttpError) return reply.code(error.statusCode).send(errorPayload(error.code, error.message, error.details));
     const details = typeof error === 'object' && error !== null
       ? error as { validation?: unknown; statusCode?: number }
       : {};
@@ -115,5 +127,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await registerAuthRoutes(app, dummyPasswordHash);
   await registerAdminRoutes(app);
   await registerPracticeRoutes(app);
+  await registerExamRoutes(app);
   return app;
 }

@@ -1,8 +1,8 @@
-# P2 HTTP API
+# P3 HTTP API
 
 API base is the configured local service address. The server currently defaults to `127.0.0.1:3000`; set `HOST`, `PORT`, and `CORS_ORIGINS` for the actual local deployment. Do not add public reverse-proxy or frp settings here.
 
-Authenticated requests use `Authorization: Bearer <session-token>`. Session tokens are random; SQLite stores only their SHA-256 digest. Errors use `{ "error": { "code": "...", "message": "..." } }`.
+Authenticated requests use `Authorization: Bearer <session-token>`. Session tokens are random; SQLite stores only their SHA-256 digest. Errors use `{ "error": { "code": "...", "message": "...", "details?": {} } }`.
 
 ## Health and user session
 
@@ -82,4 +82,30 @@ Progress is calculated only from saved attempts for questions in the selected ac
 
 ## Current client boundary
 
-The desktop and mobile learning home read real progress and recent practice data; practice selection, question delivery, server grading, saved feedback, favorites, and session resume use the endpoints above. With no session or no enabled bank, the interface shows empty or connection states. Exam rules are still read from the selected bank version. Formal mock-exam creation/submission, exam timing/scoring, and the P4 cross-round mistake mastery state machine are not implemented in P2. Development `?preview=1` fixtures remain isolated from API calls and production builds.
+The desktop and mobile learning home read real progress and recent practice data; practice selection, question delivery, server grading, saved feedback, favorites, and session resume use the endpoints above. With no session or no enabled bank, the interface shows empty or connection states. Development `?preview=1` fixtures remain isolated from API calls and production builds.
+
+## Mock exams
+
+Every exam endpoint below requires a non-expired, enabled user's session and is bound to the authenticated account. The client cannot supply `user_id`. A valid forced-password-change session is rejected by the existing `PASSWORD_CHANGE_REQUIRED` gate. Starting an exam snapshots the active bank version and its `exam_rules`; question order, question text/options/source, correct answer, points, start time, deadline, and rule values remain bound to that exam even after a bank revision.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/exams` | Start an exam from `{ "bankId": "<uuid>" }`; a repeated start while an exam is active returns that same exam. |
+| `GET` | `/api/exams/active` | Read the caller's active exam, including safe questions and saved answer versions; returns `{ "session": null, "questions": [], "result": null }` when none is active. |
+| `GET` | `/api/exams/history?bankId=...` | Read up to 100 own exam summaries, optionally filtered by bank. |
+| `GET` | `/api/exams/:id` | Restore the caller's exam and ordered paper. Before finalization it returns safe question snapshots and saved answers only. After finalization it also returns the immutable result and correct answers. |
+| `PUT` | `/api/exams/:id/questions/:position/answer` | Synchronize one answer and its review marker using an expected version and idempotency key. |
+| `POST` | `/api/exams/:id/submit` | Submit and grade immediately; retries return the same saved result. |
+| `GET` | `/api/exams/:id/result` | Read the finalized result and full snapshot review; before finalization returns `409 EXAM_NOT_FINISHED`. |
+
+`POST /api/exams` returns `201` for a new paper or `200` when it returns the user's current active exam. The server validates that the active version has enough questions for every configured type. A shortage returns `409 EXAM_QUESTION_SHORTAGE` with `{ "type", "required", "available" }`; absent/invalid rules return `EXAM_RULES_MISSING` or `EXAM_RULES_INVALID`. The four-level rules remain 120 single-choice × 0.5, 20 multiple-choice × 1, 40 judgement × 0.5, 180 total, 100 maximum score, 90 minutes. Other banks use their own rules. Each selected question record appears once in the paper.
+
+Before settlement, `/api/exams` responses do not contain `answer_json`, `raw_answer`, `correctAnswer`, answer keys, per-question correctness, or scores. A saved answer is returned as `{ "position", "answer", "marked", "version", "updatedAt" }`; an unanswered question has an empty answer and version 0. A write body is `{ "answer": ["A", "C"], "expectedVersion": 2, "requestId": "<unique request id>", "marked": false }`. `answer` may be empty to clear a response; duplicate or unavailable option letters are rejected. The same `requestId` with the same payload is idempotent. Reusing a request ID for different content returns `409 IDEMPOTENCY_KEY_REUSED`. A stale version returns `409 ANSWER_VERSION_CONFLICT` and `error.details.current` with the server's answer, marker, version, and timestamp so a client can reconcile and retry. Versions increase per question; an older write cannot replace a newer one.
+
+The server sets `startedAt` and `deadlineAt`; the client countdown is display-only. At `now >= deadlineAt`, answer updates are rejected and the server settles using only previously committed answers. Expiration is settled on startup, by a periodic server sweep, and when an active/history/result endpoint reads the exam. Closing the APP, logging out, losing the network, or restarting the service does not pause the deadline. The database partial unique index limits each user to one `in_progress` exam.
+
+Manual submit and timeout settlement run in a SQLite transaction and are idempotent through the single `exam_results` row keyed by exam ID. Single-choice and judgement answers require an exact one-letter match; multiple-choice uses exact set equality; unanswered questions score zero and do not create mistake entries. Wrong answered questions update `mistake_states` exactly once per exam. A saved result contains total and per-type score, passing status from the snapshotted rule, correct/wrong/unanswered counts, duration, and all 180 questions with the user's answer, correct answer, points, and source snapshot. Exam sessions and snapshot questions remain associated with the old bank version for later review.
+
+Relevant exam errors include `EXAM_NOT_FOUND` (404, including another user's exam), `EXAM_QUESTION_NOT_FOUND` (404), `EXAM_QUESTION_SHORTAGE` (409), `ANSWER_VERSION_CONFLICT` (409), `IDEMPOTENCY_KEY_REUSED` (409), `EXAM_DEADLINE_PASSED` or `EXAM_ALREADY_FINISHED` (409), `EXAM_NOT_FINISHED` (409), and `SESSION_INVALID` (401).
+
+The mobile exam settings, answer sheet, server-synchronized responses, confirmation dialog, score view, full paper review, and exam history use these APIs. Development Preview remains a non-persistent visual fixture and does not submit to these endpoints.

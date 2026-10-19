@@ -67,7 +67,7 @@ test('P2-R account issuance, first-login password change, isolation, and credent
       assert.equal(row.password_hash, oldHash);
       assert.equal(row.must_change_password, 0);
       assert.equal(row.is_test_account, 0);
-      assert.equal(Number((upgraded.prepare('SELECT MAX(version) AS version FROM schema_migrations').get() as { version: number }).version), 3);
+      assert.equal(Number((upgraded.prepare('SELECT MAX(version) AS version FROM schema_migrations').get() as { version: number }).version), 4);
     } finally { upgraded.close(); }
   });
 

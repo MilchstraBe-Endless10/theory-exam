@@ -12,7 +12,7 @@ const serverDir = fileURLToPath(new URL('..', import.meta.url));
 const projectDir = resolve(serverDir, '../..');
 const mobileDir = join(projectDir, 'apps', 'mobile');
 const workbookPath = join(projectDir, 'local-input', '四级理论试题.xlsx');
-const screenshotDir = process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR ? resolve(process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR) : '';
+const screenshotDir = process.env.P3_BROWSER_SCREENSHOT_DIR || process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR ? resolve(process.env.P3_BROWSER_SCREENSHOT_DIR || process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR) : '';
 const adminPassword = `P1BrowserAdmin-${randomBytes(16).toString('hex')}!`;
 const userPassword = `P1BrowserUser-${randomBytes(16).toString('hex')}!`;
 const changedUserPassword = `P1BrowserChanged-${randomBytes(16).toString('hex')}!`;
@@ -22,6 +22,7 @@ const processes = [];
 const pending = new Map();
 const failures = [];
 const consoleErrors = [];
+const responseFailures = [];
 let browser;
 let socket;
 let testDatabase;
@@ -100,6 +101,16 @@ async function clickAnswer(letter, root = '.mobile-route') {
   assert.equal(state.clicked, true, `Could not select option ${letter}; rendered labels: ${state.options.join(', ') || '(none)'}.`);
 }
 
+async function clickExamAnswer(letter) {
+  const clicked = await evaluate(`(() => {
+    const element = [...document.querySelectorAll('.exam-question-content .answer-option')]
+      .find(item => item.querySelector('strong')?.innerText.trim() === ${JSON.stringify(`${letter}.`)});
+    if (element) element.click();
+    return Boolean(element);
+  })()`);
+  assert.equal(clicked, true, `Could not select exam option ${letter}.`);
+}
+
 async function fill(selector, value) {
   const filled = await evaluate(`(() => {
     const input = document.querySelector(${JSON.stringify(selector)});
@@ -117,9 +128,9 @@ async function bodyText() {
   return evaluate('document.body.innerText');
 }
 
-async function capture(name) {
+async function capture(name, beyondViewport = true) {
   if (!screenshotDir) return;
-  const result = await cdp('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: true });
+  const result = await cdp('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: beyondViewport });
   const path = join(screenshotDir, name);
   mkdirSync(screenshotDir, { recursive: true });
   writeFileSync(path, Buffer.from(result.data, 'base64'), { flag: 'wx' });
@@ -169,7 +180,10 @@ try {
     const message = JSON.parse(event.data);
     if (message.method === 'Runtime.exceptionThrown') consoleErrors.push(message.params.exceptionDetails.text);
     if (message.method === 'Log.entryAdded' && message.params.entry.level === 'error') consoleErrors.push(message.params.entry.text);
-    if (message.method === 'Network.responseReceived' && message.params.response.status >= 500) consoleErrors.push(`${message.params.response.status} ${message.params.response.url}`);
+    if (message.method === 'Network.responseReceived' && message.params.response.status >= 400) {
+      responseFailures.push(`${message.params.response.status} ${message.params.response.url}`);
+      if (message.params.response.status >= 500) consoleErrors.push(`${message.params.response.status} ${message.params.response.url}`);
+    }
     if (!message.id) return;
     const request = pending.get(message.id);
     if (!request) return;
@@ -213,11 +227,16 @@ try {
   const input = await cdp('DOM.querySelector', { nodeId: document.root.nodeId, selector: '.admin-file-label input[type="file"]' });
   assert.ok(input.nodeId, 'Admin UI file input is missing.');
   await cdp('DOM.setFileInputFiles', { nodeId: input.nodeId, files: [workbookPath] });
+  await fill('.admin-import-form .admin-form-grid label:nth-child(1) input', 'level4');
+  await fill('.admin-import-form .admin-form-grid label:nth-child(2) input', '四级理论题库');
   await click('form.admin-import-form button.admin-primary');
   try {
     await waitFor(async () => (await bodyText()).includes('导入预览'), 'Admin UI import preview did not appear.', 120000);
   } catch (error) {
     console.error('Admin import page state:', (await bodyText()).slice(0, 1200));
+    console.error('Safe import form diagnostics:', JSON.stringify(await evaluate(`({ bankKey: document.querySelector('.admin-import-form .admin-form-grid label:nth-child(1) input')?.value,
+      bankName: document.querySelector('.admin-import-form .admin-form-grid label:nth-child(2) input')?.value,
+      fileSelected: Boolean(document.querySelector('.admin-file-label input[type=file]')?.files?.length) })`)));
     throw error;
   }
   const previewText = await bodyText();
@@ -388,31 +407,152 @@ try {
   for (const rule of ['180', '90 分钟', '100 分', '单选题：120 题（每题 0.5 分）', '多选题：20 题（每题 1 分）', '判断题：40 题（每题 0.5 分）']) {
     assert.ok(examText.includes(rule), `Exam settings omitted server rule: ${rule}.`);
   }
-  assert.ok(examText.includes('考试组卷与提交功能将在后续阶段接入'), 'P1 exam settings implied that a formal exam can already start.');
-  await capture('390x844-exam-settings-from-server.png');
-  console.log('PASS mobile exam settings render the imported bank and server-provided rules');
+  await capture('390x844-exam-settings.png', false);
+  await clickContaining('.exam-settings-screen .mobile-button', '开始模拟考试');
+  await waitFor(async () => (await evaluate('location.pathname')) === '/exams/answer' && (await bodyText()).includes('1 / 180'), 'Mobile UI did not open a real 180-question exam.');
+  const examId = await evaluate('new URLSearchParams(location.search).get("exam")');
+  const firstSnapshot = testDatabase.prepare(`SELECT s.question_id AS questionId, s.answer_json AS answerJson, s.points
+    FROM exam_question_snapshots s WHERE s.exam_session_id = ? AND s.position = 1`).get(examId);
+  assert.ok(firstSnapshot, 'The browser-started exam did not persist its first question snapshot.');
+  const safePayload = await evaluate(`(async () => {
+    const token = localStorage.getItem('theory-exam.session-token') || sessionStorage.getItem('theory-exam.session-token.temporary') || '';
+    const response = await fetch('/api/exams/${examId}', { headers: { Authorization: 'Bearer ' + token } });
+    return JSON.stringify({ status: response.status, body: await response.json() });
+  })()`);
+  assert.equal(JSON.parse(safePayload).status, 200);
+  assert.ok(!safePayload.includes('answer_json') && !safePayload.includes('correctAnswer') && !safePayload.includes('raw_answer'), 'In-progress browser API leaked an answer key.');
+  assert.ok(!(await bodyText()).includes('标准答案'), 'In-progress exam UI showed a standard answer.');
+  await capture('390x844-exam-answer-confirmed.png', false);
+
+  const correctLetters = JSON.parse(firstSnapshot.answerJson);
+  const correctExamLetter = correctLetters[0];
+  await evaluate(`(() => {
+    const original = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      if (String(input).includes('/api/exams/${examId}/questions/1/answer')) {
+        window.fetch = original;
+        return Promise.reject(new TypeError('offline test'));
+      }
+      return original(input, init);
+    };
+  })()`);
+  await clickExamAnswer(correctExamLetter);
+  await waitFor(async () => (await bodyText()).includes('网络中断'), 'Exam answer network failure was not shown as unsynchronized.');
+  assert.equal(Number(testDatabase.prepare('SELECT COUNT(*) AS count FROM exam_answers WHERE exam_session_id = ?').get(examId).count), 0, 'Failed exam answer was incorrectly stored.');
+  await capture('390x844-exam-answer-offline.png', false);
+  await clickContaining('.exam-answer-footer button', '下一题');
+  await waitFor(async () => (await bodyText()).includes('2 / 180'), 'Exam could not move to another question while the previous answer was offline.');
+  const secondSnapshot = testDatabase.prepare(`SELECT answer_json AS answerJson, points FROM exam_question_snapshots
+    WHERE exam_session_id = ? AND position = 2`).get(examId);
+  await clickExamAnswer(JSON.parse(secondSnapshot.answerJson)[0]);
+  await waitFor(async () => Number(testDatabase.prepare(`SELECT COUNT(*) AS count FROM exam_answers a
+    JOIN exam_question_snapshots s ON s.id = a.snapshot_id
+    WHERE a.exam_session_id = ? AND s.position = 2`).get(examId).count) === 1,
+  'The second answer did not reach the server while the first answer remained offline.');
+  assert.ok((await bodyText()).includes('网络中断'), 'A successful later answer hid an earlier failed synchronization.');
+  assert.deepEqual(testDatabase.prepare(`SELECT s.position FROM exam_answers a JOIN exam_question_snapshots s
+    ON s.id = a.snapshot_id WHERE a.exam_session_id = ? ORDER BY s.position`).all(examId).map(row => row.position), [2]);
+  await clickContaining('.exam-sync button', '重试同步');
+  await waitFor(async () => (await bodyText()).includes('答案已由服务器确认'), 'Exam answer retry did not show a server confirmation.');
+  assert.deepEqual(testDatabase.prepare(`SELECT s.position FROM exam_answers a JOIN exam_question_snapshots s
+    ON s.id = a.snapshot_id WHERE a.exam_session_id = ? ORDER BY s.position`).all(examId).map(row => row.position), [1, 2]);
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
+  await capture('360x800-exam-answer-confirmed.png', false);
+  await clickContaining('.exam-answer-footer button', '答题卡');
+  await waitFor(async () => await evaluate('document.querySelectorAll(".question-number-grid button").length') === 180, 'Exam answer sheet did not contain all 180 positions.');
+  await capture('360x800-exam-answer-sheet.png', false);
+  await clickContaining('.question-number-grid button', '180');
+  await waitFor(async () => (await bodyText()).includes('180 / 180'), 'Exam answer sheet did not jump to the selected question.');
+  await clickContaining('.exam-answer-footer button', '答题卡');
+  await clickContaining('.question-number-grid button', '1');
+  await waitFor(async () => (await bodyText()).includes('1 / 180'), 'Exam answer sheet could not return to question one.');
+  for (const letter of correctLetters.slice(1)) {
+    await clickExamAnswer(letter);
+    await waitFor(async () => (await bodyText()).includes('答案已由服务器确认'), 'Multiple-choice answer did not sync after selection.');
+  }
+  await navigate(`${viteOrigin}/exams/answer?exam=${examId}&position=1`);
+  await waitFor(async () => await evaluate('Boolean(document.querySelector(".exam-question-content .answer-option.is-selected"))'), 'Reload did not restore the server-confirmed exam answer.');
+  await capture('390x844-exam-answer-restored.png', false);
+
+  await navigate(`${viteOrigin}/me`);
+  await click('.logout-button');
+  await waitFor(async () => (await bodyText()).includes('已退出登录'), 'Logout during an active exam did not complete.');
+  await navigate(`${viteOrigin}/login`);
+  await fill('.login-content input[autocomplete="username"]', 'p1-browser-learner');
+  await fill('.login-content input[autocomplete="current-password"]', changedUserPassword);
+  await click('.login-content form button[type="submit"]');
+  await waitFor(async () => (await evaluate('location.pathname')) === '/' && (await bodyText()).includes('p1-browser-learner'), 'Relogin during an active exam did not complete.');
+  await navigate(`${viteOrigin}/exams/answer?exam=${examId}&position=1`);
+  await waitFor(async () => await evaluate('Boolean(document.querySelector(".exam-question-content .answer-option.is-selected"))'), 'Active exam answer did not restore after logout and relogin.');
+  await capture('390x844-exam-answer-relogin-restored.png', false);
 
   await cdp('Emulation.setDeviceMetricsOverride', { width: 1536, height: 1024, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${viteOrigin}/exams/answer?exam=${examId}&position=1`);
+  await waitFor(async () => await evaluate('Boolean(document.querySelector(".desktop-exam-answer .exam-question-content .answer-option.is-selected"))'), 'Desktop active exam did not restore the confirmed answer.');
+  await capture('1536x1024-desktop-exam-answer.png', false);
+
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await click('.exam-submit');
+  await waitFor(async () => await evaluate('Boolean(document.querySelector(".exam-confirm-dialog"))'), 'Exam submit did not request a second confirmation.');
+  await clickContaining('.exam-confirm-dialog button', '确认交卷');
+  await waitFor(async () => (await evaluate('location.pathname')) === '/exams/result' && (await bodyText()).includes('试卷复盘'), 'Exam submit did not load the saved server result and review.');
+  const savedResult = testDatabase.prepare('SELECT total_score AS score, unanswered_count AS unanswered FROM exam_results WHERE exam_session_id = ?').get(examId);
+  const expectedScore = [firstSnapshot, secondSnapshot].reduce((score, snapshot, index) => {
+    const position = index + 1;
+    const answerRow = testDatabase.prepare(`SELECT a.answer_json AS answerJson FROM exam_answers a
+      JOIN exam_question_snapshots s ON s.id = a.snapshot_id WHERE a.exam_session_id = ? AND s.position = ?`).get(examId, position);
+    const submitted = answerRow ? JSON.parse(answerRow.answerJson).sort() : [];
+    const correct = JSON.parse(snapshot.answerJson).sort();
+    const exact = submitted.length === correct.length && submitted.every((letter, item) => letter === correct[item]);
+    return score + (exact ? snapshot.points : 0);
+  }, 0);
+  assert.equal(savedResult.score, expectedScore);
+  assert.equal(savedResult.unanswered, 178);
+  await capture('390x844-exam-result.png', false);
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
+  await capture('360x800-exam-result.png', false);
+  console.log('PASS mobile real exam creation, server answer sync/retry, 180-item answer sheet, reload recovery, confirmation, score, and review');
+
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 1536, height: 1024, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${viteOrigin}/exams/result?exam=${examId}`);
+  await waitFor(async () => await evaluate('Boolean(document.querySelector(".desktop-exam-result .exam-review-list"))'), 'Desktop saved exam result did not render.');
+  await capture('1536x1024-desktop-exam-result.png', false);
+  await navigate(`${viteOrigin}/exams`);
+  await waitFor(async () => await evaluate('Boolean(document.querySelector(".desktop-exam-settings"))'), 'Desktop exam settings did not render.');
+  await capture('1536x1024-desktop-exam-settings.png', false);
+  await navigate(`${viteOrigin}/records`);
+  await waitFor(async () => (await bodyText()).includes(`${expectedScore} 分`), 'Desktop exam history did not show the saved result.');
+  await capture('1536x1024-desktop-exam-records.png', false);
   await navigate(`${viteOrigin}/`);
   await waitFor(async () => (await bodyText()).includes('四级理论题库'), 'Desktop dashboard did not load the imported bank from /api/banks.');
   const desktopHome = await bodyText();
   assert.ok(desktopHome.includes('180 题') && desktopHome.includes('90 分钟') && desktopHome.includes('满分 100 分'), 'Desktop dashboard did not render server exam rules.');
-  await capture('1536x1024-desktop-home-with-bank.png');
-  console.log('PASS desktop dashboard renders bank metadata without changing its wide layout');
+  assert.ok((await bodyText()).includes(`${expectedScore} 分`), 'Desktop dashboard did not display the latest saved mock-exam score.');
+  await capture('1536x1024-desktop-home-with-bank.png', false);
+  console.log('PASS desktop exam settings, score history, and latest real score render without changing the wide home layout');
 
-  const countFormalData = () => Object.fromEntries(['practice_sessions', 'practice_attempts', 'favorites', 'mistake_states'].map(table => [table, Number(testDatabase.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count)]));
+  const countFormalData = () => Object.fromEntries(['practice_sessions', 'practice_attempts', 'favorites', 'mistake_states',
+    'exam_sessions', 'exam_question_snapshots', 'exam_answers', 'exam_results'].map(table =>
+    [table, Number(testDatabase.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count)]));
   const formalDataBeforePreview = countFormalData();
   await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await navigate(`${viteOrigin}/exams?preview=1`);
+  await waitFor(async () => (await bodyText()).includes('开发预览不会创建或提交真实考试'), 'Exam preview did not state that it is isolated from production data.');
+  await clickContaining('.exam-settings-screen .mobile-button', '开始模拟考试');
+  await waitFor(async () => (await evaluate('location.pathname === "/exams/answer"')) && (await bodyText()).includes('开发预览倒计时'), 'Development exam preview did not open.');
+  await click('.exam-submit');
+  await waitFor(async () => (await evaluate('location.pathname === "/exams/result"')) && (await bodyText()).includes('开发预览测试数据'), 'Development exam result fixture did not render.');
+  assert.deepEqual(countFormalData(), formalDataBeforePreview, 'Development exam preview modified formal SQLite data.');
   await navigate(`${viteOrigin}/practice/answer?type=single&preview=1`);
   await waitFor(async () => (await evaluate('location.pathname === "/practice/answer"')) && (await bodyText()).includes('开发预览'), 'Development practice preview did not open.');
   await clickAnswer('A');
   await clickContaining('.question-footer button', '下一题');
   await waitFor(async () => (await evaluate('location.pathname === "/practice/result"')) && (await bodyText()).includes('回答'), 'Development preview feedback did not render.');
   assert.deepEqual(countFormalData(), formalDataBeforePreview, 'Development preview modified formal practice data.');
-  console.log('PASS simulated network failure stays unsubmitted; development preview leaves formal SQLite data unchanged');
+  console.log('PASS simulated network failure stays unsubmitted; practice and exam previews leave all formal SQLite rows unchanged');
 
-  assert.deepEqual(consoleErrors, [], `Browser console/network errors: ${consoleErrors.join(' | ')}`);
-  console.log('P2 browser smoke passed.');
+  assert.deepEqual(consoleErrors, [], `Browser console/network errors: ${consoleErrors.join(' | ')}; HTTP failures: ${responseFailures.join(' | ')}`);
+  console.log('P3 browser smoke passed.');
 } catch (error) {
   failures.push(error instanceof Error ? error.message : String(error));
   for (const failure of failures) console.error(`FAIL ${failure}`);

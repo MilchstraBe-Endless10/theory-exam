@@ -236,4 +236,23 @@ export const migrations: Migration[] = [
       ALTER TABLE users ADD COLUMN is_test_account INTEGER NOT NULL DEFAULT 0 CHECK (is_test_account IN (0, 1));
     `,
   },
+  {
+    version: 4,
+    name: 'exam_answer_versions_and_immutable_result_details',
+    sql: `
+      ALTER TABLE exam_answers ADD COLUMN version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0);
+      ALTER TABLE exam_answers ADD COLUMN marked INTEGER NOT NULL DEFAULT 0 CHECK (marked IN (0, 1));
+      ALTER TABLE exam_answers ADD COLUMN last_write_id TEXT NOT NULL DEFAULT '';
+
+      ALTER TABLE exam_results ADD COLUMN single_score REAL NOT NULL DEFAULT 0;
+      ALTER TABLE exam_results ADD COLUMN multiple_score REAL NOT NULL DEFAULT 0;
+      ALTER TABLE exam_results ADD COLUMN judgement_score REAL NOT NULL DEFAULT 0;
+      ALTER TABLE exam_results ADD COLUMN passed INTEGER NOT NULL DEFAULT 0 CHECK (passed IN (0, 1));
+      ALTER TABLE exam_results ADD COLUMN details_json TEXT NOT NULL DEFAULT '{}';
+
+      CREATE UNIQUE INDEX exam_sessions_one_active_user_idx
+        ON exam_sessions(user_id) WHERE status = 'in_progress';
+      CREATE INDEX exam_sessions_history_idx ON exam_sessions(user_id, status, submitted_at DESC, created_at DESC);
+    `,
+  },
 ];

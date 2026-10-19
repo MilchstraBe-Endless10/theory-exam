@@ -6,9 +6,6 @@ import DashboardPage from './pages/DashboardPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import {
   ConnectPage,
-  ExamAnswerPage,
-  ExamResultPage,
-  ExamSettingsPage,
   LoginPage,
   MistakesPage,
   PersonalCenterPage,
@@ -17,6 +14,7 @@ import {
   PracticeSelectionPage,
   StartPage,
 } from './pages/MobilePages';
+import { ExamAnswerPage, ExamRecordsPage, ExamResultPage, ExamSettingsPage } from './pages/ExamPages';
 
 export default function App() {
   return <AuthProvider><Routes>
@@ -33,7 +31,7 @@ export default function App() {
         <Route path="exams/answer" element={<ExamAnswerPage />} />
         <Route path="exams/result" element={<ExamResultPage />} />
         <Route path="mistakes" element={<MistakesPage />} />
-        <Route path="records" element={<PlaceholderPage page="records" />} />
+        <Route path="records" element={<ExamRecordsPage />} />
         <Route path="favorites" element={<PlaceholderPage page="favorites" />} />
         <Route path="me" element={<PersonalCenterPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

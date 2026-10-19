@@ -3,16 +3,14 @@
 > 这是交接快照，不是聊天记录。不得记录真实密码、密码哈希或凭据文件内容。
 
 - 日期：2026-10-19
-- 阶段：P2-R 本机真实账号发放、安全验证与 GitHub 同步完成；暂停等待 P3 授权。
-- Git 起点：`main` 与 `origin/main` 同步于 `624154eec3155008af7a0f34ce50bdcdce99065b`。P2-R 提交 `518dbfdc6082396a79e1205421b7964d7b9ff2ff`，<https://github.com/MilchstraBe-Endless10/theory-exam/commit/518dbfdc6082396a79e1205421b7964d7b9ff2ff>；普通 push 后本地 HEAD、`origin/main`、GitHub main 一致。仓库保持 Private。
-- P2-R 实现：SQLite V3 增加强制首次改密和测试账号标记；本机 TTY provisioning CLI 用 CSPRNG 生成四个不同的临时密码，检查用户名冲突后整体中止，不覆盖账号；生成 Argon2id 哈希；凭据通过 `0700` 目录、`0600` 文件交付。新账号和重置密码账号都要求先改密；强制状态期间仅允许本人身份、改密和退出；首次改密事务撤销旧会话并签发新会话。API、账号列表和结构化日志不泄露密码或哈希。
-- 本机实际数据库：迁移前 V1 `integrity_check=ok`，用户、题库、题目、作答数量均为 0。使用 SQLite backup API 生成并校验 `0700/0600` 备份；优雅停止 P1 进程后升级到 V3，保留原空数据集。现在有四个 `user` 角色账户，均首登待改密；恰有一个测试账号标记。没有应用管理员记录、没有题库；本轮未导入 Excel，也未创建额外管理员。该限制已写入路线图/中期记忆。
-- 凭据清单已在创建后删除；四个初始密码位于本机权限受限文件中，保留供管理员使用。不要在后续命令、聊天、测试日志、文档或 Git 输出密码/哈希。
-- 真实 API 验证：使用本机凭据文件，四个账号均独立成功登录；响应为普通角色且包含首登改密标志，不含密码/哈希；受保护题库和管理员访问按门禁拒绝；每个会话退出后 `/api/auth/me` 返回 401。Argon2id 哈希逐一匹配初始凭据，数据库不保存明文。
-- 测试：`apps/server` 的 `npm run typecheck`、`npm run build`、`npm run test` 通过（25 项）；`apps/mobile` 的 `npm run typecheck`、`npm run build`、`npm run test` 通过（UI smoke 13 项）；`apps/server` 的 `npm run test:browser` 通过。Chromium 实测强制改密、真实题库临时导入/练习、登录退出、真实统计与 Preview 隔离。
-- 本轮浏览器发现并修复：首次强制改密完成后，题库 hook 未按 `mustChangePassword` 状态刷新，导致界面保留首登 403；现已在改密状态变更后重取题库，改密门禁显示期间不发送正式题库请求。浏览器 smoke 的题量断言和题目切换等待条件也改为与实际 UI/异步状态一致。
-- P2-R 浏览器截图：AI 产出目录 `图片与设计/理论考试练习系统/P2-R-账号与密码安全验收-20261019/`，包括 390×844、360×800、1536×1024 关键画面、登录和导入过程。
-- 服务端已重启并运行 P2 构建，监听 `127.0.0.1:3000`；`/api/health` 显示 migrationVersion 3。用户管理 `/admin` 当前仍处于管理员初始化状态。正式公网/局域网部署必须使用可信 HTTPS；不能承诺用户无法从自己浏览器 DevTools 查看自己刚输入的密码。
-- 更新文件：`docs/PRD-V1.md`、`docs/ARCHITECTURE.md`、`docs/DECISIONS.md`、`docs/ROADMAP.md`、`memory/LONG_TERM.md`、`memory/MID_TERM.md`；API 文档也有 P2-R 认证响应/强制改密约定。
-- GitHub Issue #2 已附无密码验收摘要并关闭；Issue #3 保持 OPEN，继续包含 Web Cookie/CSRF/XSS、Android 安全存储、可信 HTTPS、frp 管理入口隔离、APK 更新验证等任务。
-- 安全边界：`local-input/`、SQLite、备份、凭据、`.env`、日志、密钥和个人资料不得进入 Git。四级规则未变；本阶段不进入 P3、不推送公网、不发布 Release。
+- 阶段：P3 模拟考试业务已本地验收、已同步至私有 GitHub；暂停等待 P4 授权。
+- Git 基线：开始时 main 与 origin/main 同步于 05a2225af20f70c6ac9eacec6d04f9f90f1fed66。P3 提交与 GitHub URL/SHA 在本轮同步后补录；普通 push 后核验远端 main 与本地一致。
+- 服务端：新增 apps/server/src/routes/exam-routes.ts、apps/server/src/services/exam-service.ts 和 V4 迁移。按当前题库版本/规则事务组 180 题快照、每题分值与服务器起止时间；支持每账号单场考试、答题版本与幂等 requestId、断线恢复、超时自动结算、交卷判分、历史复盘、账户隔离和错题一次性更新。考试未结算前不返回正确答案。
+- 客户端：新增 apps/mobile/src/services/exams.ts 与 ExamPages.tsx；手机/桌面设置、答题、服务器倒计时、180 题答题卡、待检查标记、同步/冲突状态、交卷二次确认、成绩复盘和历史记录均接入 API。首页最近成绩读取真实考试历史。开发预览与业务 API 隔离。
+- 本地 Excel 在隔离测试库真实导入 1,283 道（单选 845、多选 38、判断 400）。服务端测试全套 30 项通过；客户端 typecheck/build 通过，UI smoke 13 项通过；Chromium 真实浏览器全流程通过，覆盖登录、组卷、离线重试、180 题跳题、刷新/登出重登恢复、交卷/评分、历史、桌面回归与 Preview 不写库。浏览器 smoke 曾暴露异步同步断言竞态，现已改为等待 SQLite 确认并重跑通过。
+- 浏览器截图：/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/图片与设计/理论考试练习系统/P3-模拟考试验收-20261019-10/；包含 390×844、360×800、1536×1024 关键页。之前失败的调试目录 08/09 不作为最终验收证据。
+- 正式库边界：P3 开始时确认 V3、四个普通账号、无管理员/题库。查询 npm run db:status 会通过 openDatabase() 自动应用迁移；因此正式库现为 V4（增量 schema），未删除/重置账号。只读计数为 migration 4、用户 4、管理员 0、题库 0、进行中考试 0；没有在正式库初始化管理员或导入 Excel。未查看密码或账号明细。
+- 本机服务已优雅重启到 P3 构建，运行 http://127.0.0.1:3000；健康检查 200/V4，未认证 /api/exams/active 返回 401。服务当前由本轮执行会话保持运行。
+- 截图视觉复核确认手机设置/答题/答题卡/结果和桌面答题/复盘布局正常；浏览器 smoke 对 390×844、360×800、1536×1024 页面通过。正式库仍无题库，因此真实账号无法开展正式考试；正式考试需管理员在本机交互式初始化并确认导入后才可使用。
+- 文档更新：docs/API.md、docs/ARCHITECTURE.md、docs/DECISIONS.md、docs/ROADMAP.md、本文件与 memory/MID_TERM.md。长期业务规则未变化，未修改 memory/LONG_TERM.md。
+- 安全与发布：未查看/记录真实密码；Excel、数据库、账号凭据、环境变量和密钥未进入 Git。未公开仓库、未推送公网、未发布 APK/Release。Issue #4 保持原状态，除非用户要求，不擅自关闭。

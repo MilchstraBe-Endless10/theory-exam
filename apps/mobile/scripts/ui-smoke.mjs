@@ -270,7 +270,7 @@ try {
   check(timerBefore !== timerAfter, 'preview countdown did not continue');
   check(await evaluate('document.querySelector(".exam-submit").textContent.includes("交卷")'), 'exam submit action is missing');
   await click('.question-panel-trigger');
-  check(await evaluate('!!document.querySelector("[role=dialog][aria-label=答题列表]") || !!document.querySelector("[role=dialog][aria-label=题目列表]")'), 'exam question panel did not open');
+  check(await evaluate('!!document.querySelector("[role=dialog][aria-label=答题卡]")'), 'exam question panel did not open');
   check(await evaluate('document.querySelectorAll(".question-number-grid button").length === 180'), 'preview answer panel did not show all 180 exam questions');
   await capture('390x844/09-exam-question-panel.png');
   await click('button[aria-label="关闭答题卡"]');

@@ -67,7 +67,7 @@ function MobileHomePage({ progress, progressLoading, progressError }: { progress
     { title: '模拟考试', icon: IconFileText, to: '/exams', tone: 'blue' },
     { title: '错题复习', icon: IconFileText, to: '/mistakes', tone: 'red' },
     { title: '我的收藏', icon: IconStar, to: '/me', tone: 'amber' },
-    { title: '考试记录', icon: IconClipboardIcon, to: '/me', tone: 'blue' },
+    { title: '考试记录', icon: IconClipboardIcon, to: '/records', tone: 'blue' },
     { title: '题库切换', icon: IconRefresh, to: '/me', tone: 'green' },
   ];
   return <Screen className="home-screen">

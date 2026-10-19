@@ -14,6 +14,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useBanks } from '../services/banks';
 import { useLearningProgress, type PracticeQuestionType } from '../services/practice';
 import { previewMode } from '../services/api';
+import { getExamHistory } from '../services/exams';
 import { MobileDashboard } from './MobilePages';
 
 const masteryTypes: Array<{ name: string; key: PracticeQuestionType; tone: string }> = [
@@ -27,10 +28,24 @@ export default function DashboardPage() {
   const { activeBank: bank, loading, error } = useBanks();
   const { progress, loading: progressLoading, error: progressError } = useLearningProgress(bank?.id, user?.id);
   const preview = previewMode();
+  const [latestExam, setLatestExam] = useState<{ totalScore: number; submittedAt: string | null } | null>(null);
+  const [examHistoryLoading, setExamHistoryLoading] = useState(false);
   const rules = bank?.examRules;
   const examCount = rules ? rules.singleCount + rules.multipleCount + rules.judgementCount : null;
   const examScore = rules ? rules.singleCount * rules.singlePoints + rules.multipleCount * rules.multiplePoints + rules.judgementCount * rules.judgementPoints : null;
   const bankLabel = bank?.name ?? (loading ? '正在读取题库…' : user ? '暂无已启用题库' : '请连接并登录本地服务');
+
+  useEffect(() => {
+    if (preview || !user || user.mustChangePassword) { setLatestExam(null); setExamHistoryLoading(false); return; }
+    let active = true;
+    setExamHistoryLoading(true);
+    getExamHistory(bank?.id).then(({ items }) => {
+      if (!active) return;
+      const row = items.find(item => typeof item.totalScore === 'number' && item.status !== 'in_progress');
+      setLatestExam(row ? { totalScore: Number(row.totalScore), submittedAt: typeof row.submittedAt === 'string' ? row.submittedAt : null } : null);
+    }).catch(() => { if (active) setLatestExam(null); }).finally(() => { if (active) setExamHistoryLoading(false); });
+    return () => { active = false; };
+  }, [preview, user?.id, user?.mustChangePassword, bank?.id]);
 
   return (
     <>
@@ -45,7 +60,7 @@ export default function DashboardPage() {
         <StatCard label="已接触题目" value={preview ? '426' : progress ? String(progress.touchedCount) : progressLoading ? '…' : '—'} detail={progress ? `当前题库共 ${progress.questionCount} 题` : preview ? '开发预览数据' : progressError || '提交练习后统计'} to="/practice" icon={IconBook} tone="mint" />
         <StatCard label="练习正确率" value={preview ? '82.6%' : progress?.accuracyRate === null || !progress ? '—' : `${progress.accuracyRate}%`} detail={progress ? `${progress.submissionCount} 次有效作答` : preview ? '开发预览数据' : progressError || '暂无正式答题记录'} to="/records" icon={IconChartBar} tone="blue" />
         <StatCard label="待复习错题" value={preview ? '38' : progress ? String(progress.pendingMistakeCount) : progressLoading ? '…' : '—'} detail={progress ? '本题库需要复习' : preview ? '开发预览数据' : progressError || '错题记录来自正式作答'} to="/mistakes" icon={IconFileText} tone="red" />
-        <StatCard label="最近模拟成绩" value="—" detail="模拟考试统计将在 P3 接入" to="/records" icon={IconTrophy} tone="amber" />
+        <StatCard label="最近模拟成绩" value={preview ? '—' : latestExam ? `${latestExam.totalScore} 分` : '—'} detail={preview ? '开发预览不展示真实成绩' : latestExam?.submittedAt ? new Date(latestExam.submittedAt).toLocaleDateString('zh-CN') : examHistoryLoading ? '正在读取考试记录…' : '暂无已完成的模拟考试'} to="/records" icon={IconTrophy} tone="amber" />
       </section>
 
       <section className="dashboard-grid primary-grid" aria-label="学习入口">
@@ -163,3 +178,4 @@ export default function DashboardPage() {
     </>
   );
 }
+import { useEffect, useState } from 'react';
