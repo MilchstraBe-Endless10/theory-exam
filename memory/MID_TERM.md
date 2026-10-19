@@ -58,7 +58,9 @@
 - 私有仓库：<https://github.com/MilchstraBe-Endless10/theory-exam>；默认分支 `main`。
 - 首次内容提交：`ff2d7fb56f332d99ee83eaa2c6fae6f01180a453`（`P0: initialize project and mobile design baseline`）。首次普通推送成功，GitHub `refs/heads/main` 与该提交 SHA 一致。
 - GitHub API 文件树与本地提交文件清单一致；共 41 个文件。题库 Excel、`local-input/`、`node_modules/`、`dist/` 均未上传；仓库状态为 private。
-- 后续 GitHub 记忆更新已由普通提交完成；P0-M 同步提交与最终远端校验结果将在本轮提交后补记。
+- P0-M 实现提交：`8d283a19d5523265780c36b756d6ba7004624e1d`（`feat(mobile): complete P0-M mobile UI and visual validation`），[GitHub Commit](https://github.com/MilchstraBe-Endless10/theory-exam/commit/8d283a19d5523265780c36b756d6ba7004624e1d)。普通推送成功；GitHub API、`git ls-remote`、本地 `HEAD` 和 `origin/main` 均确认 SHA 一致。
+- GitHub 验证：仓库 `private=true`，默认分支 `main`；远端树包含 P0-M 页面、样式、UI smoke 和手机视觉基准，未包含 `local-input/`、Excel 原始题库、数据库、环境变量或密钥。暂存差异安全扫描与 `git diff --cached --check` 通过。
+- 本轮复验：`cd apps/mobile && npm run typecheck` 通过；`npm run build` 通过；`npm run test` 通过，包含 13 组 Chromium UI smoke，覆盖两种手机视口、导航、表单、题型选择、答题卡、错题筛选、个人中心、桌面回归和控制台错误检查。
 
 ## 更新规范
 只有里程碑通过验收时打勾；如果仅代码写完但没运行/没验证，标记「阻塞/待验收」。记录实际测试证据和影响后续阶段的重要技术决策；不要重复全文 PRD。
