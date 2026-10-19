@@ -12,4 +12,4 @@
 - Chromium 端到端验收使用隔离 SQLite 和本机真实 Excel；题库 1,283 道（单选 845、多选 38、判断 400）。浏览器实际验证练习错答入错题、筛选/薄弱优先/数量不足提示、退出恢复、跨两个轮次答对后掌握、历史，以及手机与桌面页面。截图目录：`/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/图片与设计/理论考试练习系统/P4-错题复习验收-20261019-03/`。
 - 正式 SQLite 未修改：V4，四个普通账号，无管理员、无正式题库；未读写真实密码，未重置账号，未执行正式迁移或导入 Excel。正式启用仍需本机管理员操作与题库导入。
 - 已更新 `docs/API.md`、`docs/ARCHITECTURE.md`、`docs/DECISIONS.md`、`docs/ROADMAP.md`、`memory/MID_TERM.md`、`memory/SHORT_TERM.md`；长期约束未变，未改 `memory/LONG_TERM.md`。
-- GitHub：私有仓库 `https://github.com/MilchstraBe-Endless10/theory-exam`。Issue #5/#6 均为 CLOSED/completed；远端包含 P4 服务、V5 迁移、客户端页面、测试与文档。工作区仅有本轮记忆状态同步待提交；完成后进行最后普通推送和 SHA/干净状态核对。
+- GitHub：私有仓库 `https://github.com/MilchstraBe-Endless10/theory-exam`。Issue #5/#6 均为 CLOSED/completed；远端包含 P4 服务、V5 迁移、客户端页面、测试与文档。最后复核时 `HEAD`、`origin/main` 与 GitHub `main` SHA 一致，工作区干净；本次记忆状态修订会继续按普通提交/推送方式同步。
