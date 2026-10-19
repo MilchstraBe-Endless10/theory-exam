@@ -1,0 +1,63 @@
+# Dependencies and generated frontend output
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+build/
+coverage/
+.vite/
+**/.vite/
+*.log
+*.log.*
+
+# Local question banks and imported source files
+local-input/
+**/local-input/
+**/*.xlsx
+
+# Local runtime data, accounts, backups, and environment configuration
+.env
+.env.*
+**/.env
+**/.env.*
+**/.npmrc
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.sqlite-journal
+*.jsonl
+**/data/
+**/accounts/
+**/account-data/
+**/user-data/
+**/backups/
+**/logs/
+
+# Certificates, keys, and private frp configuration
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+frpc.ini
+frpc*.toml
+frpc*.yaml
+frpc*.yml
+frps.ini
+frps*.toml
+frps*.yaml
+frps*.yml
+frp-token*
+**/frp-token*
+
+# Local editor and test artifacts
+.DS_Store
+.idea/
+.vscode/
+artifacts/
+test-results/
+playwright-report/

@@ -1,0 +1,32 @@
+# Local/private data
+local-input/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.crt
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+**/backups/
+**/data/
+**/secrets/
+**/certs/
+# JS / Capacitor
+node_modules/
+dist/
+build/
+coverage/
+.vite/
+*.log
+.DS_Store
+.idea/
+.vscode/
+# Local screenshots when not part of versioned approved references
+artifacts/
+test-results/
+playwright-report/

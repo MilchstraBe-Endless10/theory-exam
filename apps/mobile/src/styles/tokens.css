@@ -1,0 +1,27 @@
+:root {
+  font-family: Inter, "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+  color: #111f41;
+  background: #f8fafd;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --page-bg: #f8fafd;
+  --surface: #fff;
+  --nav-bg: #fbfcff;
+  --text-primary: #111f41;
+  --text-secondary: #526383;
+  --text-muted: #7585a2;
+  --primary: #4568ed;
+  --primary-hover: #355be0;
+  --success: #25b79a;
+  --blue: #3887f2;
+  --purple: #8065f1;
+  --danger: #f0444b;
+  --amber: #f49b11;
+  --border: #e8edf5;
+  --radius-card: 14px;
+  --shadow-card: 0 8px 28px rgb(24 45 83 / 3.5%);
+  --sidebar-width: 256px;
+}
