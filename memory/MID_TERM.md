@@ -3,7 +3,7 @@
 更新时间：2026-10-19（P4 错题复习验收完成）
 
 ## 当前阶段
-**P0、P0-M、P1、P2、P2-R、P3、P4 均已完成本地验收；P4 正在完成最终提交、推送及 Issue 状态核验。Issue #3 保持打开。**
+**P0、P0-M、P1、P2、P2-R、P3、P4 均已完成验收并同步至私有 GitHub。P4 实现提交 `35466874d28cb7f018df72bd46e4586c5f93e7f3` 已验证本地与远端一致；Issue #5/#6 已关闭，Issue #3 保持打开。**
 
 ## Git 开发流程（长期约束）
 - 正式仓库：`https://github.com/MilchstraBe-Endless10/theory-exam`，保持 Private。每次开发开始前检查工作区/分支/远端并 fetch；阶段验证通过后默认普通提交、推送并核验远端 SHA。
@@ -116,4 +116,4 @@
 - 自动化验证：`apps/server` 类型检查、构建通过，测试 **48 项通过**，包含 Issue #6 只读库验证和 P4 三态、不同轮次、重试幂等、重复错答、筛选、随机不重复、退出恢复、版本/账号隔离及持久化；`apps/mobile` 类型检查、构建通过，UI smoke **14 项通过**。
 - Chromium 使用隔离 SQLite 及本机真实 Excel 完成实际流程，导入 **1,283 题（单选 845、多选 38、判断 400）**；验证普通练习错答入错题、单选/薄弱优先/10题组合、实际题量不足提示、退出后恢复、不同轮次连续正确后成为已掌握、历史结果及桌面错题本。390×844、360×800、1536×1024 截图均检查，视觉与交互问题已修正。截图目录：`/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/图片与设计/理论考试练习系统/P4-错题复习验收-20261019-03/`。
 - 正式数据库状态未改变：V4、四名普通账号、无管理员、无正式题库。本阶段不初始化管理员、不重置账号、不导入正式题库。正式启用仍需本机管理员操作及题库导入。
-- API 文档、架构、ADR、路线图及本记忆已更新；`memory/LONG_TERM.md` 未改（长期业务规则不变）。提交、远端 SHA 和 Issue #5/#6 最终状态在本轮提交推送后补记。
+- API 文档、架构、ADR、路线图及本记忆已更新；`memory/LONG_TERM.md` 未改（长期业务规则不变）。P4 实现提交 `35466874d28cb7f018df72bd46e4586c5f93e7f3`（[GitHub commit](https://github.com/MilchstraBe-Endless10/theory-exam/commit/35466874d28cb7f018df72bd46e4586c5f93e7f3)）已普通推送；推送后 `HEAD`、`origin/main`、`git ls-remote` 与 GitHub API commit 均一致。仓库仍为 Private。Issue #6（只读状态修复）与 Issue #5（P4）均在全部验证通过后以 completed 关闭。
