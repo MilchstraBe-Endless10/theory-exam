@@ -1,9 +1,9 @@
 # 中期记忆（阶段 / 里程碑）
 
-更新时间：2026-10-19（P5-A 隔离验收进行中；Android 构建受环境阻塞）
+更新时间：2026-10-19（P5-A Android debug APK 已构建；Android 设备安装验收待设备）
 
 ## 当前阶段
-**P0、P0-M、P1、P2、P2-R、P3、P4 均已完成验收并同步至私有 GitHub。P5-A 的服务端/浏览器/备份与安全代码已隔离验证；新增 8080 生产 Web Gateway、同源 Cookie/CSRF、双入口管理 API 拒绝与 Chromium 验收通过。当前机器仍无 JDK、Android SDK、Gradle 或 adb，APK 构建和安装验收未完成；不得标记 P5-A 完成，也未开始 P5-B。正式 SQLite 保持 V4，MeFrp 双隧道离线，Issue #3/#7 继续打开。**
+**P0、P0-M、P1、P2、P2-R、P3、P4 均已完成验收并同步至私有 GitHub。P5-A 的服务端/浏览器/备份与安全代码已隔离验证；新增 8080 生产 Web Gateway、同源 Cookie/CSRF、双入口管理 API 拒绝与 Chromium 验收通过。Android 用户级 JDK 21/SDK 已安装，debug APK 已构建并检查；当前没有连接的 Android 设备，也未配置模拟器，因此安装、启动及原生交互验收仍未完成。不得标记 P5-A 完成，也未开始 P5-B。正式 SQLite 保持 V4，MeFrp 双隧道离线，Issue #3/#7 继续打开。**
 
 ## Git 开发流程（长期约束）
 - 正式仓库：`https://github.com/MilchstraBe-Endless10/theory-exam`，保持 Private。每次开发开始前检查工作区/分支/远端并 fetch；阶段验证通过后默认普通提交、推送并核验远端 SHA。
@@ -132,6 +132,9 @@
 - 运行库只读观察：`127.0.0.1:3000/api/health` 返回 `migrationVersion: 4`；`db:status` 返回 `migration_pending`（V4→V6，exit 1 是待迁移状态信号），未更改 DB。`127.0.0.1:3001` 无 listener。`theory-exam.service`、`frpc.service`、`frps.service` inactive，frpc/frps 进程不存在。P5-A 等待具备 Android 工具链的构建/安装验证；P5-B 还需用户确认实际 systemd、V4→V6、可信 HTTPS 与 frp 变更方案。
 
 ## P5-A 双入口 Web 补充验收（2026-10-19；P5-A 仍未完成）
+- Android 工具链补充：本机 Omarchy 4.0.4/x86_64 已在用户目录安装 Temurin JDK 21.0.12.1、Google SDK Command-line Tools 23、Android Platform 36、Build Tools 36.0.0/35.0.0、Platform Tools/adb 37.0.1；用 Gradle Wrapper 8.14.3 / AGP 8.13.0 成功完成 `npm --prefix apps/mobile run android:debug`。Google Android SDK License 已由用户在本对话明确确认。
+- 已核验 Debug APK：`com.theoryexam.mobile.dev`、1.0.0-dev.1/versionCode 1、minSdk 24、targetSdk 36，Android Debug key 签名；SHA-256 `329e776eb46e298c17efce70c7424c9c050e9374b3379bdad41ea2664c785f9e`。APK、构建日志与校验文件存于 AI 输出目录 `其他/理论考试练习系统/P5-A-Android验收-20261019-01/`；Debug 包不可作为 Release 或稳定更新包。
+- ADB 无已连接设备，USB 只见键盘/鼠标，没有 `/dev/kvm` 且未安装模拟器。APK 构建虽成功，Android 安装/启动及扫码权限、secure storage、网络/考试恢复、系统更新安装器均尚无设备证据；不宣称 Android 真机验收通过。前后端回归本轮通过：server 59/59、mobile UI smoke 14/14、Chromium Web smoke 通过。正式 3000/V4 SQLite 保持未动，MeFrp 离线。P5-A 仍未完成，也未进入 P5-B。
 - 本轮在 `feat/p5-a-android-security`（开始时 `a791adc6fcdcf519e160098f07a42686cfc606e0`、工作区干净）新增 Node 标准库生产 Web Gateway：loopback `127.0.0.1:8080`、提供 `apps/mobile/dist`、React SPA 刷新、hashed asset immutable cache、index no-cache、文件/未知 API 404、CSP 与安全响应头。生产模式没有可信 TLS cert/key 时拒绝启动；API target 限定 loopback HTTP(S) origin。
 - `/api/*` 仅代理 `/api/health`、认证、题库、练习、收藏、进度、考试、错题复习及更新业务路由。管理/bootstrap/未知 API/编码路径/点文件/不支持方法在 proxy 前拒绝，且不触发 SPA fallback。网关不转发 `Forwarded`、`X-Forwarded-*` 和 `X-Real-IP`，API 响应禁缓存。Fastify business surface 同样不注册管理页面或 API。
 - 非开发浏览器构建固定使用当前 origin；沿用 `HttpOnly; SameSite=Strict; Secure` Cookie（生产 API 强制 Secure）、CSRF token 与精确 Origin allowlist。Android Capacitor 继续走服务器地址和原生 secure-storage Bearer。隔离 SQLite 集成验证两种会话最终关联同一用户/DB，错误 Origin/缺 CSRF 的写操作被拒；浏览器响应不含 Bearer token。既有 P3 `expectedVersion`/`requestId` 考试答案冲突逻辑未改，服务端回归覆盖。

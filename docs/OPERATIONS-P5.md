@@ -32,6 +32,21 @@
 
 所有数据库与备份保存在应用源码目录之外，目录 `0700`、文件 `0600`。本阶段测试只使用 `/tmp` 隔离数据库。
 
+## Android 本机 Debug 构建
+
+本机开发构建使用 JDK 21、Android SDK Platform 36、Build Tools 36.0.0 和项目自带 Gradle Wrapper 8.14.3。当前 Omarchy 用户级环境通过 `source "$HOME/.config/theory-exam/android-env.sh"` 临时设置 `JAVA_HOME`、`ANDROID_HOME`、`ANDROID_SDK_ROOT` 与 `PATH`；该脚本在用户目录中，不提交到 Git，也不修改全局 Java。
+
+构建命令：
+
+```bash
+source "$HOME/.config/theory-exam/android-env.sh"
+java -version
+adb devices -l
+npm --prefix apps/mobile run android:debug
+```
+
+Debug APK 生成于 `apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk`，目录受 `apps/mobile/android/.gitignore` 忽略。当前 Debug 身份为 `com.theoryexam.mobile.dev` / `1.0.0-dev.1`，使用 Android Debug 签名；不能当作正式发布包或稳定升级签名。没有已连接的 Android 设备或可用模拟器时，构建成功不等于安装、启动或原生功能验收完成。
+
 ## 更新包准备
 
 Android 开发包身份当前为 `com.theoryexam.mobile.dev`，不代表正式包名。正式包 ID、签名密钥保管和正式 HTTPS 地址仍待用户确认。APP 不包含 GitHub Token。正式私有 Release 同步所需的服务器凭据只能由 P5-B 运维人员配置到受限 systemd 环境；本阶段不读取该凭据、不发布 Release，也不声称存在已签名可升级 APK。
