@@ -255,4 +255,53 @@ export const migrations: Migration[] = [
       CREATE INDEX exam_sessions_history_idx ON exam_sessions(user_id, status, submitted_at DESC, created_at DESC);
     `,
   },
+  {
+    version: 5,
+    name: 'persistent_mistake_review_rounds_and_mastery_history',
+    sql: `
+      CREATE TABLE review_rounds (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+        bank_id TEXT NOT NULL REFERENCES question_banks(id) ON DELETE RESTRICT,
+        bank_version_id TEXT NOT NULL REFERENCES bank_versions(id) ON DELETE RESTRICT,
+        question_type_filter TEXT NOT NULL CHECK (question_type_filter IN ('all', 'single', 'multiple', 'judgement')),
+        strategy TEXT NOT NULL CHECK (strategy IN ('random', 'weak')),
+        quantity_selection TEXT NOT NULL CHECK (quantity_selection IN ('10', '20', 'all')),
+        mastery_status_filter TEXT NOT NULL CHECK (mastery_status_filter IN ('pending', 'mastered')),
+        available_count INTEGER NOT NULL CHECK (available_count > 0),
+        question_count INTEGER NOT NULL CHECK (question_count > 0 AND question_count <= available_count),
+        current_position INTEGER NOT NULL DEFAULT 1 CHECK (current_position > 0),
+        submitted_count INTEGER NOT NULL DEFAULT 0 CHECK (submitted_count >= 0 AND submitted_count <= question_count),
+        status TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'completed', 'exited')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        completed_at TEXT,
+        exited_at TEXT
+      );
+      CREATE INDEX review_rounds_user_bank_history_idx ON review_rounds(user_id, bank_id, created_at DESC);
+      CREATE UNIQUE INDEX review_rounds_one_active_user_bank_idx ON review_rounds(user_id, bank_id) WHERE status = 'in_progress';
+
+      CREATE TABLE review_round_questions (
+        review_round_id TEXT NOT NULL REFERENCES review_rounds(id) ON DELETE RESTRICT,
+        position INTEGER NOT NULL CHECK (position > 0),
+        question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE RESTRICT,
+        PRIMARY KEY (review_round_id, position),
+        UNIQUE (review_round_id, question_id)
+      );
+
+      CREATE TABLE review_attempts (
+        id TEXT PRIMARY KEY,
+        review_round_id TEXT NOT NULL,
+        question_id TEXT NOT NULL,
+        answer_json TEXT NOT NULL,
+        is_correct INTEGER NOT NULL CHECK (is_correct IN (0, 1)),
+        mastery_status_after TEXT NOT NULL CHECK (mastery_status_after IN ('review', 'reinforcing', 'mastered')),
+        consecutive_correct_rounds_after INTEGER NOT NULL CHECK (consecutive_correct_rounds_after BETWEEN 0 AND 2),
+        submitted_at TEXT NOT NULL,
+        UNIQUE (review_round_id, question_id),
+        FOREIGN KEY (review_round_id, question_id) REFERENCES review_round_questions(review_round_id, question_id) ON DELETE RESTRICT
+      );
+      CREATE INDEX review_attempts_round_submitted_idx ON review_attempts(review_round_id, submitted_at);
+    `,
+  },
 ];

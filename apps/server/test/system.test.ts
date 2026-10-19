@@ -10,6 +10,7 @@ import { buildApp } from '../src/app.js';
 import { isLoopbackAddress } from '../src/auth.js';
 import { loadConfig } from '../src/config.js';
 import { openDatabase } from '../src/db/database.js';
+import { migrations } from '../src/db/migrations.js';
 import { parseQuestionWorkbook } from '../src/services/excel-import.js';
 
 const password = `p1-test-${randomBytes(16).toString('hex')}!`;
@@ -68,7 +69,7 @@ test('P1 server, authentication, SQLite, and two-phase Excel imports', async t =
   await t.test('migrations enable foreign keys, WAL, and restrictive local data permissions', () => {
     assert.equal(Number((app.db.prepare('PRAGMA foreign_keys').get() as { foreign_keys: number }).foreign_keys), 1);
     assert.equal(String((app.db.prepare('PRAGMA journal_mode').get() as { journal_mode: string }).journal_mode).toLowerCase(), 'wal');
-    assert.equal(Number((app.db.prepare('SELECT MAX(version) AS n FROM schema_migrations').get() as { n: number }).n), 4);
+    assert.equal(Number((app.db.prepare('SELECT MAX(version) AS n FROM schema_migrations').get() as { n: number }).n), migrations.at(-1)?.version);
     assert.equal(statSync(temporaryDirectory).mode & 0o777, 0o700);
     assert.equal(statSync(databasePath).mode & 0o777, 0o600);
   });

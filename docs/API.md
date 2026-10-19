@@ -1,4 +1,4 @@
-# P3 HTTP API
+# HTTP API (P1–P4)
 
 API base is the configured local service address. The server currently defaults to `127.0.0.1:3000`; set `HOST`, `PORT`, and `CORS_ORIGINS` for the actual local deployment. Do not add public reverse-proxy or frp settings here.
 
@@ -109,3 +109,35 @@ Manual submit and timeout settlement run in a SQLite transaction and are idempot
 Relevant exam errors include `EXAM_NOT_FOUND` (404, including another user's exam), `EXAM_QUESTION_NOT_FOUND` (404), `EXAM_QUESTION_SHORTAGE` (409), `ANSWER_VERSION_CONFLICT` (409), `IDEMPOTENCY_KEY_REUSED` (409), `EXAM_DEADLINE_PASSED` or `EXAM_ALREADY_FINISHED` (409), `EXAM_NOT_FINISHED` (409), and `SESSION_INVALID` (401).
 
 The mobile exam settings, answer sheet, server-synchronized responses, confirmation dialog, score view, full paper review, and exam history use these APIs. Development Preview remains a non-persistent visual fixture and does not submit to these endpoints.
+
+## Formal mistake review rounds (P4)
+
+Every endpoint below requires an enabled, authenticated user session. The server obtains the user ID only from the validated session. A review round is bound to the bank version active when it is created, and its question IDs and order are immutable. The `mistake_states` row is the single current mastery state per user and question; review rounds and attempts preserve the history across bank revisions.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/mistakes/stats?bankId=...` | Read current-version counts for `review`, `reinforcing`, and `mastered`, including per-type counts. |
+| `GET` | `/api/mistakes?bankId=...&masteryStatus=...&questionType=...` | List own mistakes in the bank's active version. `masteryStatus` accepts `pending`, `review`, `reinforcing`, `mastered`, or `all`; `questionType` accepts `all`, `single`, `multiple`, or `judgement`. |
+| `GET` | `/api/reviews/active?bankId=...` | Return the latest resumable round and its saved position, or null values when no round is active/exited. |
+| `GET` | `/api/reviews/history?bankId=...` | Return up to 100 of the caller's rounds, with answered/correct counts and status. |
+| `POST` | `/api/reviews` | Create a round from `bankId`, `questionType`, `strategy`, `quantity`, and `masteryStatus`. |
+| `GET` | `/api/reviews/:id` | Read an owned round and its safe current question. |
+| `GET` | `/api/reviews/:id/question?position=...` | Read one safe question by one-based position. |
+| `POST` | `/api/reviews/:id/position` | Save the current position using `{ "position": 2 }`. |
+| `POST` | `/api/reviews/:id/resume` | Resume an exited round. |
+| `POST` | `/api/reviews/:id/exit` | Save an unfinished round as exited; its question order and answers remain available. |
+| `POST` | `/api/reviews/:id/submit` | Submit `{ "answer": ["A"] }`; the server grades, records the answer, and updates mastery in one transaction. |
+| `GET` | `/api/reviews/:id/result?position=...` | Return feedback only for an already submitted question. |
+| `GET` | `/api/reviews/:id/results` | Return the round summary and all submitted feedback for its history detail. Unanswered positions have no answer key in the response. |
+
+`POST /api/reviews` accepts `questionType` as `all`, `single`, `multiple`, or `judgement`; `strategy` as `random` or `weak`; `quantity` as `10`, `20`, or `all`; and `masteryStatus` as `pending` or `mastered`. `pending` selects both `review` and `reinforcing`. The requested quantity is capped at the actual matching count; the response reports `availableCount`, actual `questionCount`, and `round.reducedToAvailable` so the UI can explain a short set. No matching questions returns `409 NO_REVIEW_QUESTIONS`. Only one unfinished round per user and bank can be in progress at a time; a conflict returns `409 REVIEW_ROUND_IN_PROGRESS` with the existing round ID.
+
+The create response includes `{ "round", "currentQuestion", "availableCount" }`. A round summary contains its ID, bank and version IDs, type filter, strategy, requested quantity, mastery scope, available and snapshotted question counts, saved current position, submitted count, status, timestamps, and `reducedToAvailable`. Safe question responses include the stem, options, source row, current mastery status, and error count, but do not include `answer_json`, `raw_answer`, or a correct answer. A correctness result is returned only after a successful persisted submission and contains the submitted and correct option sets, correct option text, the mastery state after this attempt, and round progress. When the workbook has no explanation, feedback says `原题库未提供解析`.
+
+Single-choice and judgement require exactly one valid option. Multiple-choice normalizes option letters and requires exact set equality; an incomplete, extra, or incorrect set is wrong. Repeating the same submission in the same round returns the original attempt ID and feedback without updating counts again. Submitting a different answer for an already submitted question returns `409 REVIEW_ANSWER_ALREADY_SUBMITTED`. A unique `(review_round_id, question_id)` constraint and the write transaction enforce one counted attempt per question per round.
+
+Mastery transitions are server-owned: an initial practice or answered exam error creates or resets `review` with zero consecutive review rounds; an ordinary practice or exam correct answer never advances mastery. A correct answer in one formal review round changes `review` to `reinforcing` with count 1; a correct answer in a different round changes it to `mastered` with count 2. Any subsequent error from ordinary practice, an answered exam question, or a formal review resets a mastered/reinforcing question to `review`. Unanswered exam questions do not create mistake state. A same-round retry, refresh, or replay cannot count as another round. The history tables remain version-linked and are not deleted when a bank's active version changes.
+
+Errors include `BANK_NOT_AVAILABLE` (404), `NO_REVIEW_QUESTIONS` (409), `REVIEW_ROUND_IN_PROGRESS` (409), `REVIEW_ROUND_NOT_FOUND` (404, including a round owned by another account), `REVIEW_QUESTION_NOT_FOUND` (404), `INVALID_REVIEW_POSITION` (400), `INVALID_ANSWER` (400), `REVIEW_ANSWER_REQUIRED` (409), `REVIEW_ANSWER_ALREADY_SUBMITTED` (409), `REVIEW_ROUND_NOT_ACTIVE` (409), and `SESSION_INVALID` (401). The history result endpoint follows the same ownership rule and returns 404 for another user's round.
+
+The mobile mistake book, desktop review view, question feedback, resume control, mastery counts, and history detail read these endpoints. In development, `?preview=1` uses visibly marked local fixtures and makes no review API request; the production client uses only server data.

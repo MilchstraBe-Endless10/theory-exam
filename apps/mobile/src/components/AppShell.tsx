@@ -18,7 +18,7 @@ const pageNames: Record<string, string> = {
 export default function AppShell() {
   const { pathname } = useLocation();
   const { user, serverStatus } = useAuth();
-  const pageName = pageNames[pathname] ?? '概览';
+  const pageName = pathname.startsWith('/mistakes') ? '错题复习' : pageNames[pathname] ?? '概览';
   const immersive = isImmersiveRoute(pathname);
   const connectionLabel = serverStatus === 'connected' ? '已连接本地服务' : serverStatus === 'checking' ? '正在检查服务器' : serverStatus === 'unavailable' ? '服务器不可用' : '未连接本地服务';
 

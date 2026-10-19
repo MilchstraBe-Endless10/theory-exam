@@ -7,13 +7,13 @@ import PlaceholderPage from './pages/PlaceholderPage';
 import {
   ConnectPage,
   LoginPage,
-  MistakesPage,
   PersonalCenterPage,
   PracticeAnswerPage,
   PracticeResultPage,
   PracticeSelectionPage,
   StartPage,
 } from './pages/MobilePages';
+import { MistakesPage, ReviewAnswerPage, ReviewHistoryDetailPage } from './pages/MistakePages';
 import { ExamAnswerPage, ExamRecordsPage, ExamResultPage, ExamSettingsPage } from './pages/ExamPages';
 
 export default function App() {
@@ -31,6 +31,8 @@ export default function App() {
         <Route path="exams/answer" element={<ExamAnswerPage />} />
         <Route path="exams/result" element={<ExamResultPage />} />
         <Route path="mistakes" element={<MistakesPage />} />
+        <Route path="mistakes/review" element={<ReviewAnswerPage />} />
+        <Route path="mistakes/history/:id" element={<ReviewHistoryDetailPage />} />
         <Route path="records" element={<ExamRecordsPage />} />
         <Route path="favorites" element={<PlaceholderPage page="favorites" />} />
         <Route path="me" element={<PersonalCenterPage />} />

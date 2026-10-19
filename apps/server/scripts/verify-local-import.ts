@@ -4,14 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { openDatabase } from '../src/db/database.js';
+import { openMigratedDatabase } from '../src/db/database.js';
 import { confirmImport, previewImport } from '../src/services/import-service.js';
 import { parseQuestionWorkbook } from '../src/services/excel-import.js';
 
 const workbookPath = fileURLToPath(new URL('../../../local-input/四级理论试题.xlsx', import.meta.url));
 const dataDirectory = mkdtempSync(join(tmpdir(), 'theory-exam-real-import-'));
 const databasePath = join(dataDirectory, 'import.test.sqlite');
-let db: ReturnType<typeof openDatabase> | undefined;
+let db: ReturnType<typeof openMigratedDatabase> | undefined;
 
 try {
   const buffer = readFileSync(workbookPath);
@@ -24,7 +24,7 @@ try {
   assert.equal(parsed.missingAnswers.length, 0);
   assert.ok(parsed.duplicateStems.length > 0, 'duplicate stems should be reported rather than removed');
 
-  db = openDatabase(databasePath);
+  db = openMigratedDatabase(databasePath);
   const adminId = randomUUID();
   const now = new Date().toISOString();
   db.prepare(`INSERT INTO users(id, username, password_hash, role, disabled, created_at, updated_at)
@@ -64,7 +64,7 @@ try {
   db.close();
   db = undefined;
 
-  db = openDatabase(databasePath);
+  db = openMigratedDatabase(databasePath);
   assert.equal(Number((db.prepare('SELECT COUNT(*) AS count FROM questions').get() as { count: number }).count), 1283);
   assert.equal(Number((db.prepare('SELECT COUNT(*) AS count FROM bank_versions').get() as { count: number }).count), 1);
   const rules = db.prepare('SELECT single_count, multiple_count, judgement_count, duration_minutes FROM exam_rules').get() as Record<string, number>;

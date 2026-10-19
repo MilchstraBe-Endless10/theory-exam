@@ -5,7 +5,7 @@ import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { provisionAccounts, type AccountProvisionSpec } from './account-provisioning.js';
 import { loadConfig } from './config.js';
-import { openDatabase, readDatabaseStatus, inTransaction } from './db/database.js';
+import { openMigratedDatabase, readDatabaseStatus, readDatabaseStatusAtPath, inTransaction } from './db/database.js';
 import { hashPassword, isValidPassword, newId } from './security.js';
 
 async function askHidden(prompt: string): Promise<string> {
@@ -42,7 +42,7 @@ async function askHidden(prompt: string): Promise<string> {
 
 async function adminInit(): Promise<void> {
   const config = loadConfig();
-  const db = openDatabase(config.databasePath);
+  const db = openMigratedDatabase(config.databasePath);
   try {
     const count = Number((db.prepare("SELECT COUNT(*) AS count FROM users WHERE role='admin'").get() as { count: number }).count);
     if (count) throw new Error('An administrator already exists; initialization is one-time.');
@@ -82,11 +82,15 @@ if (command === 'admin:init') {
   await adminInit();
 } else if (command === 'clean-test') {
   cleanTestDatabase();
-} else if (command === 'migrate' || command === 'status') {
-  const db = openDatabase(loadConfig().databasePath);
+} else if (command === 'status') {
+  const status = readDatabaseStatusAtPath(loadConfig().databasePath);
+  stdout.write(`${JSON.stringify(status, null, 2)}\n`);
+  if (status.state !== 'ready') process.exitCode = 1;
+} else if (command === 'migrate') {
+  const db = openMigratedDatabase(loadConfig().databasePath);
   try {
     const status = readDatabaseStatus(db);
-    stdout.write(`${JSON.stringify({ database: 'ready', ...status }, null, 2)}\n`);
+    stdout.write(`${JSON.stringify({ state: 'ready', ...status }, null, 2)}\n`);
   } finally { db.close(); }
 } else if (command === 'accounts:provision') {
   const manifestArgument = process.argv.indexOf('--manifest');
@@ -109,11 +113,11 @@ if (command === 'admin:init') {
   const databasePath = loadConfig().databasePath;
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const credentialsPath = join(dirname(databasePath), 'issued-credentials', `initial-credentials-${stamp}.json`);
-  const db = openDatabase(databasePath);
+  const db = openMigratedDatabase(databasePath);
   try {
     const result = await provisionAccounts(db, manifest.accounts, credentialsPath);
     stdout.write(`Created ${result.createdCount} ordinary user accounts. One-time credentials: ${result.credentialsPath} (mode 0600).\n`);
   } finally { db.close(); }
 } else {
-  throw new Error('Usage: cli.ts [migrate|status|clean-test|admin:init|accounts:provision --manifest PATH --confirm]');
+  throw new Error('Usage: cli.ts [status|migrate|clean-test|admin:init|accounts:provision --manifest PATH --confirm]');
 }

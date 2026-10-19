@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import {
   IconArrowLeft, IconBell, IconBook, IconChartBar, IconCheck,
   IconChevronRight, IconCircleCheck, IconClockHour4, IconDots, IconFileText,
-  IconFlag, IconGridDots, IconEye, IconEyeOff, IconInfoCircle, IconLink, IconLock,
+  IconGridDots, IconEye, IconEyeOff, IconInfoCircle, IconLink, IconLock,
   IconLogout, IconPencil, IconQrcode, IconRefresh, IconShieldCheck,
   IconStar, IconTrophy, IconUser, IconUserFilled, IconWifi, IconX,
 } from '@tabler/icons-react';
@@ -15,6 +15,7 @@ import {
   getPracticeResult, getPracticeSession, movePracticePosition, resumePracticeSession, setQuestionFavorite,
   submitPracticeAnswer, type PracticeMode, type PracticeProgress,
 } from '../services/practice';
+import { useMistakeStats } from '../services/reviews';
 
 const preview = import.meta.env.DEV && new URLSearchParams(window.location.search).get('preview') === '1';
 const href = (path: string) => preview ? `${path}${path.includes('?') ? '&' : '?'}preview=1` : path;
@@ -59,9 +60,10 @@ function MobileHomePage({ progress, progressLoading, progressError }: { progress
   const notice = useNotice();
   const { user } = useAuth();
   const { activeBank: bank, loading, error } = useBanks();
+  const { stats: mistakeStats } = useMistakeStats(bank?.id, user?.id);
   const touched = preview ? '426' : progress ? String(progress.touchedCount) : progressLoading ? '…' : '—';
   const accuracy = preview ? '82.6%' : progress?.accuracyRate == null ? '—' : `${progress.accuracyRate}%`;
-  const mistakes = preview ? '38' : progress ? String(progress.pendingMistakeCount) : progressLoading ? '…' : '—';
+  const mistakes = preview ? '38' : mistakeStats ? String(mistakeStats.review + mistakeStats.reinforcing) : progressLoading ? '…' : '—';
   const quick = [
     { title: '日常练习', icon: IconPencil, to: '/practice', tone: 'green' },
     { title: '模拟考试', icon: IconFileText, to: '/exams', tone: 'blue' },
@@ -556,26 +558,6 @@ function ScoreRow({ title, value, percentage, tone }: { title: string; value: st
   return <div className="score-row"><div><strong>{title}</strong><span>{value}</span></div><div className={`score-track tone-${tone}`}><i style={{ width: percentage }} /></div></div>;
 }
 
-export function MistakesPage() {
-  const [types, setTypes] = useState<string[]>(['single', 'multiple', 'truefalse']);
-  const [strategy, setStrategy] = useState('random');
-  const [quantity, setQuantity] = useState('20');
-  const [started, setStarted] = useState(false);
-  const toggleType = (type: string) => setTypes(list => list.includes(type) ? list.filter(value => value !== type) : [...list, type]);
-  const start = () => { if (types.length === 0) { setStarted(true); return; } window.location.assign(href('/practice/answer?type=mistakes')); };
-  return <ResponsivePage desktop={<DesktopPlaceholder title="错题复习" />}><Screen className="mistakes-screen" immersive><Header title="错题复习" back="/" /><PreviewBadge />
-    <section className="mistake-stats"><div className="tone-red"><IconFileText size={18} /><strong>{preview ? '38' : '—'}</strong><small>待复习</small></div><div className="tone-amber"><IconClockHour4 size={18} /><strong>{preview ? '12' : '—'}</strong><small>巩固中</small></div><div className="tone-green"><IconCircleCheck size={18} /><strong>{preview ? '74' : '—'}</strong><small>已掌握</small></div></section>
-    <section className="mistake-filter-list"><FilterRow title="混合题型练习" desc="随机组合各题型错题" icon={IconGridDots} tone="blue" checked={types.length === 3} onClick={() => setTypes(types.length === 3 ? [] : ['single', 'multiple', 'truefalse'])} /><FilterRow title="仅单选题" desc={preview ? '待复习 26 题' : '连接服务端后显示错题数量'} icon={IconFileText} tone="amber" checked={types.includes('single')} onClick={() => toggleType('single')} /><FilterRow title="仅多选题" desc={preview ? '待复习 4 题' : '连接服务端后显示错题数量'} icon={IconFileText} tone="blue" checked={types.includes('multiple')} onClick={() => toggleType('multiple')} /><FilterRow title="仅判断题" desc={preview ? '待复习 8 题' : '连接服务端后显示错题数量'} icon={IconCircleCheck} tone="green" checked={types.includes('truefalse')} onClick={() => toggleType('truefalse')} /></section>
-    <section className="mistake-options"><button className="priority-setting" role="switch" aria-checked={strategy === 'weak'} onClick={() => setStrategy(strategy === 'weak' ? 'random' : 'weak')}><span><IconFlag size={17} /><span><strong>薄弱题优先</strong><small>优先复习正确率较低的题目</small></span></span><span className={`toggle${strategy === 'weak' ? ' is-on' : ''}`}><i /></span></button><div className="option-setting"><span><IconFileText size={17} />复习数量</span><select value={quantity} onChange={e => setQuantity(e.target.value)}><option value="10">10 题</option><option value="20">20 题</option><option value="all">全部</option></select></div></section>
-    <p className="mastery-note">同一道错题需在不同复习轮次连续答对两次，才会标记为已掌握。</p>{started && !types.length && <p className="form-error">请至少选择一种题型</p>}
-    <div className="mistake-footer"><MobileButton onClick={start}>开始复习 <IconChevronRight size={18} /></MobileButton></div>
-  </Screen></ResponsivePage>;
-}
-
-function FilterRow({ title, desc, icon: Icon, tone, checked, onClick }: { title: string; desc: string; icon: typeof IconBook; tone: string; checked: boolean; onClick: () => void }) {
-  return <button className="mistake-filter-row" onClick={onClick}><span className={`choice-icon tone-${tone}`}><Icon size={20} /></span><span><strong>{title}</strong><small>{desc}</small></span><span className={`toggle${checked ? ' is-on' : ''}`}><i /></span></button>;
-}
-
 export function PersonalCenterPage() {
   const notice = useNotice();
   const [panel, setPanel] = useState('');
@@ -587,11 +569,13 @@ export function PersonalCenterPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
   const { user, serverAddress, serverStatus, setUser } = useAuth();
+  const { activeBank } = useBanks();
+  const { stats: mistakeStats } = useMistakeStats(activeBank?.id, user?.id);
   const navigate = useNavigate();
   const rows = [
     { title: '学习统计', detail: '查看学习进度', icon: IconChartBar },
     { title: '我的收藏', detail: preview ? '共 12 题' : '连接服务端后显示', icon: IconStar },
-    { title: '错题本', detail: preview ? '待复习 38 题' : '连接服务端后显示', icon: IconFileText },
+    { title: '错题本', detail: preview ? '预览数据' : mistakeStats ? `待复习 ${mistakeStats.review + mistakeStats.reinforcing} 题 · 已掌握 ${mistakeStats.mastered} 题` : '连接服务端后显示', icon: IconFileText },
     { title: '考试记录', detail: preview ? '共 12 次' : '连接服务端后显示', icon: IconClipboardIcon },
     { title: '题库切换', detail: selectedBank ? '已选择' : '读取服务端题库', icon: IconRefresh },
     { title: '连接设置', detail: serverAddress ? serverAddress : '未连接本地服务', icon: IconLink },
@@ -656,5 +640,6 @@ function IconClipboardIcon(props: React.ComponentProps<typeof IconFileText>) {
 }
 
 export function isImmersiveRoute(pathname: string) {
-  return ['/start', '/connect', '/login', '/practice', '/practice/answer', '/practice/result', '/exams', '/exams/answer', '/exams/result', '/mistakes'].includes(pathname);
+  return ['/start', '/connect', '/login', '/practice', '/practice/answer', '/practice/result', '/exams', '/exams/answer', '/exams/result', '/mistakes', '/mistakes/review'].includes(pathname)
+    || pathname.startsWith('/mistakes/history/');
 }

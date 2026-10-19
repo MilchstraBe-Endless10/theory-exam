@@ -6,13 +6,14 @@ import fastifyStatic from '@fastify/static';
 import { join } from 'node:path';
 import { requireAdmin, requireLocal, requireSession, isLoopbackAddress } from './auth.js';
 import { loadConfig, type ServerConfig } from './config.js';
-import { openDatabase, readDatabaseStatus } from './db/database.js';
+import { openDatabase, openMigratedDatabase, readDatabaseStatus, readDatabaseStatusAtPath } from './db/database.js';
 import { HttpError } from './errors.js';
 import { hashPassword } from './security.js';
 import { registerAdminRoutes } from './routes/admin-routes.js';
 import { registerAuthRoutes } from './routes/auth-routes.js';
 import { registerPracticeRoutes } from './routes/practice-routes.js';
 import { registerExamRoutes } from './routes/exam-routes.js';
+import { registerReviewRoutes } from './routes/review-routes.js';
 import { settleExpiredExams } from './services/exam-service.js';
 
 export interface BuildAppOptions {
@@ -34,7 +35,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     databasePath: options.databasePath ?? baseConfig.databasePath,
     staticDir: options.staticDir ?? baseConfig.staticDir,
   };
-  const db = openDatabase(config.databasePath);
+  if (config.environment !== 'test') {
+    const status = readDatabaseStatusAtPath(config.databasePath);
+    if (status.state !== 'ready') throw new Error(`${status.message} Run apps/server npm run db:migrate before starting the service.`);
+  }
+  const db = config.environment === 'test'
+    ? openMigratedDatabase(config.databasePath)
+    : openDatabase(config.databasePath);
   const app = Fastify({
     logger: options.logger === false ? false : {
       ...(typeof options.logger === 'object' ? options.logger : {}),
@@ -128,5 +135,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await registerAdminRoutes(app);
   await registerPracticeRoutes(app);
   await registerExamRoutes(app);
+  await registerReviewRoutes(app);
   return app;
 }

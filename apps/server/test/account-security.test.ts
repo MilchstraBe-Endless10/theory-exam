@@ -10,7 +10,7 @@ import type { FastifyInstance } from 'fastify';
 import { provisionAccounts, createInitialPassword, type AccountProvisionSpec } from '../src/account-provisioning.js';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
-import { openDatabase } from '../src/db/database.js';
+import { openDatabase, openMigratedDatabase } from '../src/db/database.js';
 import { migrations } from '../src/db/migrations.js';
 import { hashPassword, verifyPassword } from '../src/security.js';
 
@@ -60,14 +60,14 @@ test('P2-R account issuance, first-login password change, isolation, and credent
       VALUES ('preserved-user', 'preserved-user', ?, 'user', 0, '2026-10-01', '2026-10-01')`).run(oldHash);
     legacy.close();
 
-    const upgraded = openDatabase(legacyPath);
+    const upgraded = openMigratedDatabase(legacyPath);
     try {
       const row = upgraded.prepare('SELECT username, password_hash, must_change_password, is_test_account FROM users WHERE id = ?').get('preserved-user') as Record<string, unknown>;
       assert.equal(row.username, 'preserved-user');
       assert.equal(row.password_hash, oldHash);
       assert.equal(row.must_change_password, 0);
       assert.equal(row.is_test_account, 0);
-      assert.equal(Number((upgraded.prepare('SELECT MAX(version) AS version FROM schema_migrations').get() as { version: number }).version), 4);
+      assert.equal(Number((upgraded.prepare('SELECT MAX(version) AS version FROM schema_migrations').get() as { version: number }).version), migrations.at(-1)?.version);
     } finally { upgraded.close(); }
   });
 

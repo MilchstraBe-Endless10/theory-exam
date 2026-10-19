@@ -231,7 +231,8 @@ export function submitPracticeAnswer(db: DatabaseSync, userId: string, sessionId
         consecutive_correct_rounds, mastery_status, last_review_round_id, updated_at)
         VALUES (?, ?, ?, ?, 1, 0, 'review', NULL, ?)
         ON CONFLICT(user_id, question_id) DO UPDATE SET wrong_count = wrong_count + 1,
-          consecutive_correct_rounds = 0, mastery_status = 'review', updated_at = excluded.updated_at`)
+          bank_id = excluded.bank_id, bank_version_id = excluded.bank_version_id,
+          consecutive_correct_rounds = 0, mastery_status = 'review', last_review_round_id = NULL, updated_at = excluded.updated_at`)
         .run(userId, session.bank_id, session.bank_version_id, link.id, now);
     }
     const submittedCount = Number((db.prepare('SELECT COUNT(*) AS count FROM practice_attempts WHERE practice_session_id = ?').get(session.id) as { count: number }).count);

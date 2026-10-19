@@ -16,6 +16,7 @@ import { useBanks } from '../services/banks';
 import { useLearningProgress, type PracticeQuestionType } from '../services/practice';
 import { previewMode } from '../services/api';
 import { getExamHistory } from '../services/exams';
+import { useMistakeStats } from '../services/reviews';
 import { MobileDashboard } from './MobilePages';
 
 const masteryTypes: Array<{ name: string; key: PracticeQuestionType; tone: string }> = [
@@ -28,6 +29,7 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const { activeBank: bank, loading, error } = useBanks();
   const { progress, loading: progressLoading, error: progressError } = useLearningProgress(bank?.id, user?.id);
+  const { stats: mistakeStats } = useMistakeStats(bank?.id, user?.id);
   const preview = previewMode();
   const [latestExam, setLatestExam] = useState<{ totalScore: number; submittedAt: string | null } | null>(null);
   const [examHistoryLoading, setExamHistoryLoading] = useState(false);
@@ -60,7 +62,7 @@ export default function DashboardPage() {
       <section className="stat-grid" aria-label="学习数据概览">
         <StatCard label="已接触题目" value={preview ? '426' : progress ? String(progress.touchedCount) : progressLoading ? '…' : '—'} detail={progress ? `当前题库共 ${progress.questionCount} 题` : preview ? '开发预览数据' : progressError || '提交练习后统计'} to="/practice" icon={IconBook} tone="mint" />
         <StatCard label="练习正确率" value={preview ? '82.6%' : progress?.accuracyRate === null || !progress ? '—' : `${progress.accuracyRate}%`} detail={progress ? `${progress.submissionCount} 次有效作答` : preview ? '开发预览数据' : progressError || '暂无正式答题记录'} to="/records" icon={IconChartBar} tone="blue" />
-        <StatCard label="待复习错题" value={preview ? '38' : progress ? String(progress.pendingMistakeCount) : progressLoading ? '…' : '—'} detail={progress ? '本题库需要复习' : preview ? '开发预览数据' : progressError || '错题记录来自正式作答'} to="/mistakes" icon={IconFileText} tone="red" />
+        <StatCard label="待复习错题" value={preview ? '38' : mistakeStats ? String(mistakeStats.review + mistakeStats.reinforcing) : progressLoading ? '…' : '—'} detail={mistakeStats ? `巩固中 ${mistakeStats.reinforcing} 题` : preview ? '开发预览数据' : progressError || '错题记录来自正式作答'} to="/mistakes" icon={IconFileText} tone="red" />
         <StatCard label="最近模拟成绩" value={preview ? '—' : latestExam ? `${latestExam.totalScore} 分` : '—'} detail={preview ? '开发预览不展示真实成绩' : latestExam?.submittedAt ? new Date(latestExam.submittedAt).toLocaleDateString('zh-CN') : examHistoryLoading ? '正在读取考试记录…' : '暂无已完成的模拟考试'} to="/records" icon={IconTrophy} tone="amber" />
       </section>
 
@@ -136,18 +138,18 @@ export default function DashboardPage() {
           <div className="review-states">
             <div className="review-state review-pending">
               <span className="review-state-icon"><IconFileText size={22} stroke={1.8} /></span>
-              <span><small>待复习</small><strong>{progress?.pendingMistakeCount ?? '—'} <em>题</em></strong></span>
+              <span><small>待复习</small><strong>{preview ? '38' : mistakeStats ? mistakeStats.review : '—'} <em>题</em></strong></span>
             </div>
             <div className="review-state review-learning">
               <span className="review-state-icon"><IconClockHour4 size={22} stroke={1.8} /></span>
-              <span><small>连续复习</small><strong>— <em>题</em></strong></span>
+              <span><small>连续复习</small><strong>{preview ? '12' : mistakeStats ? mistakeStats.reinforcing : '—'} <em>题</em></strong></span>
             </div>
             <div className="review-state review-mastered">
               <span className="review-state-icon"><IconCircleCheck size={22} stroke={1.8} /></span>
-              <span><small>掌握状态</small><strong>— <em>P4</em></strong></span>
+              <span><small>已掌握</small><strong>{preview ? '74' : mistakeStats ? mistakeStats.mastered : '—'} <em>题</em></strong></span>
             </div>
           </div>
-          <p className="card-footnote">{progress ? `已收藏 ${progress.favoriteCount} 题 · 待复习 ${progress.pendingMistakeCount} 题` : preview ? '开发预览数据' : progressError || '收藏和错题统计在登录后读取'}</p>
+          <p className="card-footnote">{progress ? `已收藏 ${progress.favoriteCount} 题 · 待复习 ${mistakeStats ? mistakeStats.review + mistakeStats.reinforcing : '—'} 题` : preview ? '开发预览数据' : progressError || '收藏和错题统计在登录后读取'}</p>
           <Link className="button button-primary button-wide" to="/mistakes">开始复习 <IconChevronRight size={19} stroke={2} /></Link>
         </article>
       </section>

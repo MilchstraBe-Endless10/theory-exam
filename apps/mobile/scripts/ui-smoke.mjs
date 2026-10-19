@@ -16,6 +16,7 @@ let socket;
 let profileDir;
 const pending = new Map();
 const consoleErrors = [];
+const apiRequests = [];
 let commandId = 0;
 
 function check(condition, message) {
@@ -118,6 +119,7 @@ try {
     if (message.method === 'Runtime.exceptionThrown') consoleErrors.push(message.params.exceptionDetails.text);
     if (message.method === 'Log.entryAdded' && message.params.entry.level === 'error') consoleErrors.push(`${message.params.entry.url || ''} ${message.params.entry.text}`);
     if (message.method === 'Network.responseReceived' && message.params.response.status >= 400) consoleErrors.push(`${message.params.response.status} ${message.params.response.url}`);
+    if (message.method === 'Network.requestWillBeSent' && /\/api\/(?:reviews|mistakes)/.test(message.params.request.url)) apiRequests.push(message.params.request.url);
     if (!message.id) return;
     const entry = pending.get(message.id);
     if (!entry) return;
@@ -162,6 +164,14 @@ try {
     check(longLayout.width <= longLayout.viewport, `long practice question caused horizontal overflow at ${size.width}x${size.height}`);
     check(longLayout.questionHeight > 24 && longLayout.optionHeight > 20, `long question or option did not wrap at ${size.width}x${size.height}`);
     await capture(`${size.width}x${size.height}/06-practice-answer-long.png`);
+    await navigate(`/mistakes${preview}`);
+    await capture(`${size.width}x${size.height}/11-mistakes.png`);
+    await navigate(`/mistakes/review?round=preview-round&preview=1`);
+    check(await evaluate('!!document.querySelector(".mistake-question-card")'), `review question did not render at ${size.width}x${size.height}`);
+    await capture(`${size.width}x${size.height}/11-review-question.png`);
+    await navigate(`/mistakes/history/preview-round${preview}`);
+    check((await evaluate('document.body.innerText')).includes('本轮复习已完成'), 'preview review history fixture did not render');
+    await capture(`${size.width}x${size.height}/11-review-history.png`);
     pass(`12 routes render without horizontal overflow at ${size.width}x${size.height}`);
   }
 
@@ -287,15 +297,26 @@ try {
   pass('exam question panel opens/closes and preview result is visibly marked');
 
   await navigate(`/mistakes${preview}`);
-  await click('button.mistake-filter-row:nth-child(2)');
-  check(await evaluate('document.querySelectorAll("button.mistake-filter-row .toggle.is-on").length === 2'), 'mistake filters did not allow combinations');
+  await click('.mistake-type-options button:nth-child(2)');
+  check(await evaluate('document.querySelector(".mistake-type-options button:nth-child(2)").classList.contains("is-selected")'), 'single-question review filter did not select');
   await click('button.priority-setting');
   check(await evaluate('document.querySelector("button.priority-setting").getAttribute("aria-checked") === "true"'), 'weak-first strategy did not toggle on');
-  pass('mistake type filters combine and weak-first strategy toggles');
+  pass('mistake type filter and weak-first strategy respond');
 
   await click('.mistake-options select');
   await evaluate('(() => { const select = document.querySelector(".mistake-options select"); select.value = "all"; select.dispatchEvent(new Event("change", { bubbles: true })); })()');
   check(await evaluate('document.querySelector(".mistake-options select").value === "all"'), 'mistake review quantity did not change');
+  await capture('390x844/11-review-settings-selected.png');
+  await click('.mistake-footer .mobile-button');
+  await waitFor(() => evaluate('location.pathname === "/mistakes/review"'), 'review entry did not open a round');
+  await waitFor(() => evaluate('!!document.querySelector(".mistake-question-card")'), 'review question did not mount after creating the preview round');
+  await click('.mistake-question-card .answer-option:first-child');
+  check(await evaluate('document.querySelector(".mistake-question-card .answer-option:first-child").getAttribute("aria-pressed") === "true"'), 'review option did not select');
+  await click('.mistake-answer-actions button:nth-child(2)');
+  check((await evaluate('document.body.innerText')).includes('回答正确'), 'review feedback did not appear after answer submit');
+  await capture('390x844/11-review-feedback.png');
+  check(apiRequests.length === 0, `preview review touched formal APIs: ${apiRequests.join(', ')}`);
+  pass('review selection, weak-first, quantity, answer feedback, and preview isolation work');
   await navigate(`/me${preview}`);
   await click('.profile-row:first-child');
   check(await evaluate('!!document.querySelector("[role=dialog]") && document.querySelector("[role=dialog]").innerText.includes("示例信息")'), 'profile row did not open its accurate preview detail');
@@ -312,6 +333,10 @@ try {
   check(desktop.width === 1536 && desktop.height === 1024 && desktop.dashboard && !desktop.overflow, 'desktop dashboard regression at 1536x1024');
   pass('desktop dashboard remains visible at 1536x1024 without overflow');
   await capture('1536x1024/desktop-home.png');
+  await navigate(`/mistakes${preview}`);
+  const desktopMistakes = await evaluate('({ width: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth, visible: getComputedStyle(document.querySelector(".desktop-mistakes-page")).display !== "none" })');
+  check(desktopMistakes.width === 1536 && desktopMistakes.visible && !desktopMistakes.overflow, 'desktop mistake review layout is not visible or overflows');
+  await capture('1536x1024/desktop-mistakes.png');
 
   check(consoleErrors.length === 0, `browser console errors: ${consoleErrors.join(' | ')}`);
   pass('no browser console errors');

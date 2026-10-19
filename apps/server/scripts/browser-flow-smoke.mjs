@@ -12,7 +12,7 @@ const serverDir = fileURLToPath(new URL('..', import.meta.url));
 const projectDir = resolve(serverDir, '../..');
 const mobileDir = join(projectDir, 'apps', 'mobile');
 const workbookPath = join(projectDir, 'local-input', '四级理论试题.xlsx');
-const screenshotDir = process.env.P3_BROWSER_SCREENSHOT_DIR || process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR ? resolve(process.env.P3_BROWSER_SCREENSHOT_DIR || process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR) : '';
+const screenshotDir = process.env.P4_BROWSER_SCREENSHOT_DIR || process.env.P3_BROWSER_SCREENSHOT_DIR || process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR ? resolve(process.env.P4_BROWSER_SCREENSHOT_DIR || process.env.P3_BROWSER_SCREENSHOT_DIR || process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR) : '';
 const adminPassword = `P1BrowserAdmin-${randomBytes(16).toString('hex')}!`;
 const userPassword = `P1BrowserUser-${randomBytes(16).toString('hex')}!`;
 const changedUserPassword = `P1BrowserChanged-${randomBytes(16).toString('hex')}!`;
@@ -109,6 +109,16 @@ async function clickExamAnswer(letter) {
     return Boolean(element);
   })()`);
   assert.equal(clicked, true, `Could not select exam option ${letter}.`);
+}
+
+async function clickReviewAnswer(letter) {
+  const clicked = await evaluate(`(() => {
+    const element = [...document.querySelectorAll('.mistake-question-card .answer-option')]
+      .find(item => item.querySelector('strong')?.innerText.trim() === ${JSON.stringify(`${letter}.`)});
+    if (element) element.click();
+    return Boolean(element);
+  })()`);
+  assert.equal(clicked, true, `Could not select review option ${letter}.`);
 }
 
 async function fill(selector, value) {
@@ -374,10 +384,88 @@ try {
   await navigate(`${viteOrigin}/practice/result?session=${sessionId}&position=2`);
   await waitFor(async () => (await bodyText()).includes('回答错误') && await evaluate('Boolean(document.querySelector(".desktop-practice-question"))'), 'Desktop practice result did not render.');
   await capture('1536x1024-practice-wrong-feedback.png');
-  console.log('PASS browser real Excel question delivery, correct/wrong grading, persisted feedback, and mobile/desktop result layouts');
-
   await click('.desktop-practice-actions .button-text');
   await waitFor(async () => (await evaluate('location.pathname')) === '/practice' && await evaluate('Boolean(document.querySelector(".desktop-practice-resume"))'), 'Exited practice session could not be restored from selection.');
+  console.log('PASS browser real Excel question delivery, correct/wrong grading, persisted feedback, and mobile/desktop result layouts');
+
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await navigate(`${viteOrigin}/mistakes`);
+  await waitFor(async () => await evaluate('document.querySelector(".mistake-stats > div:first-child strong")?.innerText === "1"'), 'Mistake book did not display the server-created wrong answer.');
+  assert.deepEqual(await evaluate('({ width: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth })'), { width: 390, overflow: false }, '390x844 mistake screen overflowed horizontally.');
+  await capture('390x844-p4-mistake-settings.png', false);
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
+  assert.deepEqual(await evaluate('({ width: innerWidth, height: innerHeight, overflow: document.documentElement.scrollWidth > innerWidth })'), { width: 360, height: 800, overflow: false }, '360x800 mistake screen overflowed horizontally.');
+  await capture('360x800-p4-mistake-settings.png', false);
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await click('.mistake-type-options button:nth-child(2)');
+  await click('button.priority-setting');
+  await evaluate('(() => { const select = document.querySelector(".mistake-options select"); select.value = "10"; select.dispatchEvent(new Event("change", { bubbles: true })); })()');
+  assert.equal(await evaluate('document.querySelector(".mistake-type-options button:nth-child(2)").classList.contains("is-selected") && document.querySelector("button.priority-setting").getAttribute("aria-checked") === "true" && document.querySelector(".mistake-options select").value === "10"'), true, 'Review type, strategy, and quantity filters did not combine.');
+  await capture('390x844-p4-mistake-settings-selected.png', false);
+  await clickContaining('.mistake-footer .mobile-button', '开始复习');
+  await waitFor(async () => await evaluate('location.pathname === "/mistakes/review" && Boolean(document.querySelector(".mistake-question-card .answer-option"))'), 'Real server-backed mistake review did not open.');
+  assert.ok((await bodyText()).includes('按实际数量复习 1 道题'), 'Question shortage was not explained with the actual available count.');
+  let reviewRoundId = await evaluate('new URLSearchParams(location.search).get("round")');
+  let reviewQuestion = testDatabase.prepare(`SELECT q.id, q.answer_json, q.options_json FROM review_round_questions rq
+    JOIN questions q ON q.id = rq.question_id WHERE rq.review_round_id = ? AND rq.position = 1`).get(reviewRoundId);
+  assert.ok(reviewQuestion, 'Review round did not snapshot the wrong question.');
+  const beforeReviewText = await bodyText();
+  assert.ok(!beforeReviewText.includes('標準答案') && !beforeReviewText.includes('正确答案'), 'Review UI exposed the answer before submission.');
+  await capture('390x844-p4-review-question.png', false);
+  assert.deepEqual(await evaluate('({ width: innerWidth, height: innerHeight, overflow: document.documentElement.scrollWidth > innerWidth })'), { width: 390, height: 844, overflow: false }, '390x844 review question overflowed horizontally.');
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 1536, height: 1024, deviceScaleFactor: 1, mobile: false });
+  await capture('1536x1024-p4-review-question.png', false);
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
+  assert.deepEqual(await evaluate('({ width: innerWidth, height: innerHeight, overflow: document.documentElement.scrollWidth > innerWidth })'), { width: 360, height: 800, overflow: false }, '360x800 review question overflowed horizontally.');
+  await capture('360x800-p4-review-question.png', false);
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  const firstReviewAnswer = JSON.parse(reviewQuestion.answer_json)[0];
+  await clickReviewAnswer(firstReviewAnswer);
+  await clickContaining('.mistake-answer-actions button', '提交答案');
+  await waitFor(async () => (await bodyText()).includes('巩固中 · 连续正确 1 个复习轮次'), 'First distinct review round did not advance mastery to reinforcing.');
+  assert.equal(Number(testDatabase.prepare('SELECT consecutive_correct_rounds AS value FROM mistake_states WHERE question_id = ?').get(reviewQuestion.id).value), 1);
+  await capture('390x844-p4-review-feedback-reinforcing.png', false);
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
+  await capture('360x800-p4-review-feedback-reinforcing.png', false);
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 1536, height: 1024, deviceScaleFactor: 1, mobile: false });
+  assert.deepEqual(await evaluate('({ width: innerWidth, height: innerHeight, overflow: document.documentElement.scrollWidth > innerWidth })'), { width: 1536, height: 1024, overflow: false }, '1536x1024 review feedback overflowed horizontally.');
+  await capture('1536x1024-p4-review-feedback-reinforcing.png', false);
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await clickContaining('.mistake-answer-actions a', '查看本轮结果');
+  await waitFor(async () => (await evaluate('location.pathname')).includes('/mistakes/history/'), 'First review history detail did not open.');
+  await waitFor(async () => (await bodyText()).includes('本轮复习已完成'), 'First review history detail did not show completion.');
+  await capture('390x844-p4-review-history-first-round.png', false);
+  await navigate(`${viteOrigin}/mistakes`);
+  await waitFor(async () => await evaluate('document.querySelector(".mistake-stats > div:nth-child(2) strong")?.innerText === "1"'), 'Mistake status did not update to reinforcing after first round.');
+  await clickContaining('.mistake-footer .mobile-button', '开始复习');
+  await waitFor(async () => await evaluate('location.pathname === "/mistakes/review" && Boolean(document.querySelector(".mistake-question-card .answer-option"))'), 'Second distinct review round did not open.');
+  reviewRoundId = await evaluate('new URLSearchParams(location.search).get("round")');
+  reviewQuestion = testDatabase.prepare(`SELECT q.id, q.answer_json, q.options_json FROM review_round_questions rq
+    JOIN questions q ON q.id = rq.question_id WHERE rq.review_round_id = ? AND rq.position = 1`).get(reviewRoundId);
+  assert.ok(reviewQuestion, 'Second review round did not snapshot the question.');
+  await clickReviewAnswer(JSON.parse(reviewQuestion.answer_json)[0]);
+  await clickContaining('.mistake-answer-actions button', '提交答案');
+  await waitFor(async () => (await bodyText()).includes('已掌握 · 连续正确 2 个复习轮次'), 'Second distinct review round did not advance mastery to mastered.');
+  const masteredState = testDatabase.prepare('SELECT mastery_status AS status, consecutive_correct_rounds AS count FROM mistake_states WHERE question_id = ?').get(reviewQuestion.id);
+  assert.deepEqual({ status: masteredState.status, count: Number(masteredState.count) }, { status: 'mastered', count: 2 });
+  await capture('390x844-p4-review-feedback-mastered.png', false);
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
+  await capture('360x800-p4-review-feedback-mastered.png', false);
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 1536, height: 1024, deviceScaleFactor: 1, mobile: false });
+  await capture('1536x1024-p4-review-feedback-mastered.png', false);
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await clickContaining('.mistake-answer-actions a', '查看本轮结果');
+  await waitFor(async () => (await bodyText()).includes('本轮复习已完成'), 'Mastered review history did not load.');
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 1536, height: 1024, deviceScaleFactor: 1, mobile: false });
+  await capture('1536x1024-p4-review-history.png', false);
+  await navigate(`${viteOrigin}/mistakes`);
+  await waitFor(async () => await evaluate('document.querySelector(".desktop-mistakes-page .mistake-stats > div:nth-child(3) strong")?.innerText === "1"'), 'Desktop mistake book did not show the saved mastered state.');
+  assert.deepEqual(await evaluate('({ width: innerWidth, height: innerHeight, overflow: document.documentElement.scrollWidth > innerWidth })'), { width: 1536, height: 1024, overflow: false }, '1536x1024 desktop mistake screen overflowed horizontally.');
+  await capture('1536x1024-p4-mistake-book.png', false);
+  assert.equal(Number(testDatabase.prepare('SELECT COUNT(*) AS count FROM review_attempts WHERE question_id = ?').get(reviewQuestion.id).count), 2);
+  console.log('PASS browser real review round recovery UI, answer feedback, two-round mastery, history, and mobile/desktop layouts');
+
   await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await navigate(`${viteOrigin}/me`);
   await click('.logout-button');

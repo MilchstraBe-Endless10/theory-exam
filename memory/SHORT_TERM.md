@@ -1,16 +1,15 @@
 # 短期记忆（每次 Codex 会话更新）
 
-> 这是交接快照，不是聊天记录。不得记录真实密码、密码哈希或凭据文件内容。
+> 交接快照；不得记录真实密码、密码哈希或凭据文件内容。
 
-- 日期：2026-10-19
-- 阶段：P3 模拟考试业务已本地验收、已同步至私有 GitHub；暂停等待 P4 授权。
-- Git 基线：开始时 main 与 origin/main 同步于 05a2225af20f70c6ac9eacec6d04f9f90f1fed66。P3 实现提交 df6e68d21cb867787676a1474b04387c2b77cd99（https://github.com/MilchstraBe-Endless10/theory-exam/commit/df6e68d21cb867787676a1474b04387c2b77cd99）；Dashboard import 修复提交 e6fdc9de37f153e255e46213fd4f30e49ea6ef12（https://github.com/MilchstraBe-Endless10/theory-exam/commit/e6fdc9de37f153e255e46213fd4f30e49ea6ef12）。普通 push 后 HEAD、origin/main、git ls-remote 一致于 e6fdc9de37f153e255e46213fd4f30e49ea6ef12。
-- 服务端：新增 apps/server/src/routes/exam-routes.ts、apps/server/src/services/exam-service.ts 和 V4 迁移。按当前题库版本/规则事务组 180 题快照、每题分值与服务器起止时间；支持每账号单场考试、答题版本与幂等 requestId、断线恢复、超时自动结算、交卷判分、历史复盘、账户隔离和错题一次性更新。考试未结算前不返回正确答案。
-- 客户端：新增 apps/mobile/src/services/exams.ts 与 ExamPages.tsx；手机/桌面设置、答题、服务器倒计时、180 题答题卡、待检查标记、同步/冲突状态、交卷二次确认、成绩复盘和历史记录均接入 API。首页最近成绩读取真实考试历史。开发预览与业务 API 隔离。
-- 本地 Excel 在隔离测试库真实导入 1,283 道（单选 845、多选 38、判断 400）。服务端测试全套 30 项通过；客户端 typecheck/build 通过，UI smoke 13 项通过；Chromium 真实浏览器全流程通过，覆盖登录、组卷、离线重试、180 题跳题、刷新/登出重登恢复、交卷/评分、历史、桌面回归与 Preview 不写库。浏览器 smoke 曾暴露异步同步断言竞态，现已改为等待 SQLite 确认并重跑通过。
-- 浏览器截图：/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/图片与设计/理论考试练习系统/P3-模拟考试验收-20261019-10/；包含 390×844、360×800、1536×1024 关键页。之前失败的调试目录 08/09 不作为最终验收证据。
-- 正式库边界：P3 开始时确认 V3、四个普通账号、无管理员/题库。查询 npm run db:status 会通过 openDatabase() 自动应用迁移；因此正式库现为 V4（增量 schema），未删除/重置账号。只读计数为 migration 4、用户 4、管理员 0、题库 0、进行中考试 0；没有在正式库初始化管理员或导入 Excel。未查看密码或账号明细。
-- 本机服务已优雅重启到 P3 构建，运行 http://127.0.0.1:3000；健康检查 200/V4，未认证 /api/exams/active 返回 401。服务当前由本轮执行会话保持运行。
-- 截图视觉复核确认手机设置/答题/答题卡/结果和桌面答题/复盘布局正常；浏览器 smoke 对 390×844、360×800、1536×1024 页面通过。正式库仍无题库，因此真实账号无法开展正式考试；正式考试需管理员在本机交互式初始化并确认导入后才可使用。
-- 文档更新：docs/API.md、docs/ARCHITECTURE.md、docs/DECISIONS.md、docs/ROADMAP.md、本文件与 memory/MID_TERM.md。长期业务规则未变化，未修改 memory/LONG_TERM.md。
-- 安全与发布：未查看/记录真实密码；Excel、数据库、账号凭据、环境变量和密钥未进入 Git。未公开仓库、未推送公网、未发布 APK/Release。Issue #4 保持原状态，除非用户要求，不擅自关闭。
+- 日期：2026-10-19。
+- 阶段：P4 错题复习与掌握状态已完成本地实现和验收；等待本轮安全审查、Commit/Push、远端核验及关闭 Issue #5/#6。不得进入 P5。
+- Git 基线：开发前 `main` 与 `origin/main` 同步于 `51bfeaa41e0c15b5146c99a51528f3f7ab399d89`。工作区中现有改动均为 P4 开发与文档，无额外用户改动；远端 fetch 后没有新提交。提交 SHA 待本轮推送后补记。
+- Issue #6 已修复：`db:status` 使用只读路径，不建库、不迁移、不写数据；数据库不存在、迁移表缺失和版本超前均明确报告。`db:migrate` 独立执行，已有数据升级前先创建 SQLite 一致性备份。隔离 V3/V4、缺迁移表、版本超前、缺失数据库和 WAL 未检查点场景均有测试，确认状态查询不更改文件/schema/version/data。
+- 新增 V5 增量迁移，未修改 V1–V4。复习轮次固定账号、题库版本、条件、题目及顺序，持久化提交、结果、时间和状态；退出后可恢复，完成后可查历史。当前错题状态按用户/题目唯一；不同轮次答对依次从待复习到巩固中再到已掌握，任何正式答错回待复习。同轮重试仅计一次；普通练习/考试答对不推进掌握。
+- 复习 API 支持创建、恢复、答题、退出、历史和统计；题型、状态、随机/薄弱优先和 10/20/全部组合由服务端筛选。复习提交前不泄露答案，确认写入后返回反馈。手机错题设置/答题/反馈/历史、桌面错题本及统计已接入服务端；Preview 仍隔离。
+- 验证重跑：`apps/server` `npm run typecheck` 与 `npm run build` 通过，`npm test` **48/48 通过**。`apps/mobile` typecheck/build 通过，UI smoke **14/14 通过**，含 390×844、360×800 路由/交互和 1536×1024 桌面回归。
+- Chromium 端到端验收使用隔离 SQLite 和本机真实 Excel；题库 1,283 道（单选 845、多选 38、判断 400）。浏览器实际验证练习错答入错题、筛选/薄弱优先/数量不足提示、退出恢复、跨两个轮次答对后掌握、历史，以及手机与桌面页面。截图目录：`/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/图片与设计/理论考试练习系统/P4-错题复习验收-20261019-03/`。
+- 正式 SQLite 未修改：V4，四个普通账号，无管理员、无正式题库；未读写真实密码，未重置账号，未执行正式迁移或导入 Excel。正式启用仍需本机管理员操作与题库导入。
+- 已更新 `docs/API.md`、`docs/ARCHITECTURE.md`、`docs/DECISIONS.md`、`docs/ROADMAP.md`、`memory/MID_TERM.md`；长期约束未变，未改 `memory/LONG_TERM.md`。Issue #5/#6 尚未关闭，待推送后更新并核实。
+- GitHub：私有仓库 `https://github.com/MilchstraBe-Endless10/theory-exam`。下一步执行全量 `git diff --check`、忽略/敏感文件复查、提交 P4、普通推送、核对 `HEAD`/`origin/main`/GitHub SHA，再关闭并核实 Issue #5/#6。
