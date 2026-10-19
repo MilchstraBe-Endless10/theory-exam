@@ -1,9 +1,9 @@
 # 中期记忆（阶段 / 里程碑）
 
-更新时间：2026-10-19（P5-A Android debug APK 已构建；Android 设备安装验收待设备）
+更新时间：2026-10-20（P5-A 本机 AVD 已安装 APK；WebView 初始化崩溃，Android 页面验收未通过）
 
 ## 当前阶段
-**P0、P0-M、P1、P2、P2-R、P3、P4 均已完成验收并同步至私有 GitHub。P5-A 的服务端/浏览器/备份与安全代码已隔离验证；新增 8080 生产 Web Gateway、同源 Cookie/CSRF、双入口管理 API 拒绝与 Chromium 验收通过。Android 用户级 JDK 21/SDK 已安装，debug APK 已构建并检查；当前没有连接的 Android 设备，也未配置模拟器，因此安装、启动及原生交互验收仍未完成。不得标记 P5-A 完成，也未开始 P5-B。正式 SQLite 保持 V4，MeFrp 双隧道离线，Issue #3/#7 继续打开。**
+**P0、P0-M、P1、P2、P2-R、P3、P4 均已完成验收并同步至私有 GitHub。P5-A 的服务端/浏览器/备份与安全代码已隔离验证；新增 8080 生产 Web Gateway、同源 Cookie/CSRF、双入口管理 API 拒绝与 Chromium 验收通过。Android 用户级 JDK 21/SDK/API 36 Emulator 已安装；Debug APK 已装入 Android 16/API 36 AVD，但 WebView 初始化 `SIGTRAP`，React 页面未显示，原生交互尚未验证。P5-A 未完成，也未开始 P5-B。正式 SQLite 保持 V4，MeFrp 双隧道离线，Issue #3/#7 继续打开。**
 
 ## Git 开发流程（长期约束）
 - 正式仓库：`https://github.com/MilchstraBe-Endless10/theory-exam`，保持 Private。每次开发开始前检查工作区/分支/远端并 fetch；阶段验证通过后默认普通提交、推送并核验远端 SHA。
@@ -19,7 +19,7 @@
 - [x] P2-R 四账号、首次改密与密码安全（本机真实库 V3 迁移和四账号登录验收完成，2026-10-19）
 - [x] P3 模拟考试、断线恢复、成绩历史（真实题库隔离导入、浏览器验收与 GitHub 同步完成，2026-10-19）
 - [x] P4 错题复习和学习分析（V5 轮次、三态掌握、只读 db:status 修复、浏览器验收完成）
-- [ ] P5-A Android APP 与网络安全、备份和更新（代码及隔离验收通过；APK/真机待有 Android 工具链的主机验证）
+- [ ] P5-A Android APP 与网络安全、备份和更新（代码/Web 隔离验收通过；本机 API 36 AVD 已安装 APK，但 WebView 初始化崩溃；原生交互未验收）
 - [ ] P5-B 正式 systemd、可信 HTTPS、frp 与 V4→V6 数据库部署（需用户确认）
 - [ ] P6 系统回归、发行准备与 GitHub 发布
 
@@ -145,3 +145,11 @@
 - 边界确认：正式库 V4/四个普通账号，没有迁移、密码、管理员、题库操作；当前旧 3000 与原 Vite preview 进程未被替换；Web fixture 只用临时 SQLite/API，已停止；8080 已释放。两条 MeFrp 隧道未启动，未改 systemd/证书/公网配置。
 - 下一步：P5-A 仍需在具备 Android JDK/SDK/adb 的主机完成 APK 构建/安装与原生网络/扫码/更新验证。P5-B 前必须提供具体 TLS/DNS 方案及包含回滚的旧 3000 服务升级、V4→V6 正式迁移和隧道变更清单并获得用户另行确认。
 - 双入口实现提交：`fb00f720a5d9a02927c834579f0b797570d5c159`（<https://github.com/MilchstraBe-Endless10/theory-exam/commit/fb00f720a5d9a02927c834579f0b797570d5c159>）；记忆同步提交 `6b2e4da7356f85b83283be18bc329818d9f7a845` 已推送，普通 Push 后 `HEAD`、`origin/feat/p5-a-android-security` 和 `git ls-remote` 一致；`main` 仍为起始基线。
+
+
+## P5-A 本机 Android 验收最新状态（2026-10-20；未通过）
+- 用户批准下载并创建本机 AVD。本机 Google Emulator 37.2.12 / Android 16 API 36 x86_64 已出现可视化系统窗口；APK SHA-256 `329e776eb46e298c17efce70c7424c9c050e9374b3379bdad41ea2664c785f9e` 与指定版本匹配，包管理器确认安装，Activity 可启动。
+- 模拟器因宿主无 `/dev/kvm`、CPU 未暴露 VT-x 而以 TCG 运行。启动页之后 WebView 创建 `SIGTRAP`，涉及 `libmonochrome_64.so` / `AwContents` / `WebViewChromium` / `CapacitorWebView`；四种图形模式未修复。React 页面未出现，不能判定 APK 页面/导航通过。QEMU 关闭期间 SIGSEGV，coredumpctl 本轮列出 5 条；未复制 core。未改系统内核、全局 Java、GPU/Hyprland 配置。
+- 证据目录：截图 `/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/图片与设计/理论考试练习系统/P5-A-本机Android验收-20261020/`；模拟器日志及交付报告 `/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/报告与研究/理论考试练习系统/P5-A-本机Android验收-20261020/`。交付报告明确区分已安装、未渲染和原生功能未测。
+- 回归：mobile typecheck/build/UI smoke 14/14；server typecheck/build/tests 59/59；Chromium Web browser suite 通过。正式 SQLite V4、四个用户、旧端口服务和隧道均未修改。当前无连接设备，模拟器已停止。
+- 下一步仍在 P5-A：使用可用 VT-x/KVM 的主机或 Android 真机重试，优先定位系统 WebView/软件仿真崩溃；之后再验收扫码、安全存储、断网恢复、练习/考试恢复、更新器。不得以 Chromium/CI 代替本机 Android 验收，不进入 P5-B。
