@@ -10,6 +10,8 @@ export function isLoopbackAddress(address: string | undefined): boolean {
   return false;
 }
 
+const passwordChangeRoutes = new Set(['/api/auth/me', '/api/auth/password', '/api/auth/logout']);
+
 function denied(reply: FastifyReply, statusCode: number, code: string, message: string) {
   return reply.code(statusCode).send({ error: { code, message } });
 }
@@ -27,7 +29,7 @@ export const requireSession: preHandlerHookHandler = async (request, reply) => {
   const tokenHash = digestSessionToken(token);
   const row = request.server.db.prepare(`
     SELECT u.id, u.username, u.role, u.disabled, u.created_at, u.updated_at,
-      s.expires_at
+      u.must_change_password, u.is_test_account, s.expires_at
     FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.token_hash = ?
   `).get(tokenHash) as (Omit<UserRecord, 'password_hash'> & { expires_at: string }) | undefined;
@@ -35,6 +37,10 @@ export const requireSession: preHandlerHookHandler = async (request, reply) => {
   if (Date.parse(row.expires_at) <= Date.now() || row.disabled) {
     request.server.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash);
     return denied(reply, 401, 'SESSION_INVALID', row.disabled ? '账号已停用，请联系管理员。' : '登录状态已失效，请重新登录。');
+  }
+
+  if (row.must_change_password && !passwordChangeRoutes.has(request.routeOptions.url ?? '')) {
+    return denied(reply, 403, 'PASSWORD_CHANGE_REQUIRED', '首次登录请先修改密码。');
   }
 
   const { expires_at: sessionExpiresAt, ...user } = row;

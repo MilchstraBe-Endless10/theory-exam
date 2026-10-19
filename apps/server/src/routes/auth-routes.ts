@@ -10,8 +10,8 @@ const errorResponse = {
   properties: { error: { type: 'object', required: ['code', 'message'], additionalProperties: false, properties: { code: { type: 'string' }, message: { type: 'string' } } } },
 };
 const userSchema = {
-  type: 'object', required: ['id', 'username', 'role', 'disabled', 'createdAt'], additionalProperties: false,
-  properties: { id: { type: 'string' }, username: { type: 'string' }, role: { type: 'string', enum: ['admin', 'user'] }, disabled: { type: 'boolean' }, createdAt: { type: 'string' } },
+  type: 'object', required: ['id', 'username', 'role', 'disabled', 'createdAt', 'mustChangePassword', 'isTestAccount'], additionalProperties: false,
+  properties: { id: { type: 'string' }, username: { type: 'string' }, role: { type: 'string', enum: ['admin', 'user'] }, disabled: { type: 'boolean' }, createdAt: { type: 'string' }, mustChangePassword: { type: 'boolean' }, isTestAccount: { type: 'boolean' } },
 };
 const sessionSchema = {
   type: 'object', required: ['user', 'token', 'expiresAt'], additionalProperties: false,
@@ -40,7 +40,7 @@ export async function registerAuthRoutes(app: FastifyInstance, dummyPasswordHash
     const result = inTransaction(app.db, () => {
       const existingAdmin = Number((app.db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin'").get() as { count: number }).count);
       if (existingAdmin > 0) throw new HttpError(409, 'ADMIN_ALREADY_INITIALIZED', '管理员已初始化。');
-      const user: UserRecord = { id: newId(), username, password_hash: passwordHash, role: 'admin', disabled: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      const user: UserRecord = { id: newId(), username, password_hash: passwordHash, role: 'admin', disabled: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), must_change_password: 0, is_test_account: 0 };
       app.db.prepare('INSERT INTO users(id, username, password_hash, role, disabled, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)')
         .run(user.id, user.username, user.password_hash, user.role, user.created_at, user.updated_at);
       return { user, session: createSession(app.db, user.id, request.body.remember ?? true) };
@@ -49,11 +49,21 @@ export async function registerAuthRoutes(app: FastifyInstance, dummyPasswordHash
   });
 
   app.post<{ Body: Credentials }>('/api/auth/login', {
-    config: { rateLimit: { max: 8, timeWindow: '15 minutes' } },
+    config: { rateLimit: {
+      hook: 'preHandler',
+      max: 8,
+      timeWindow: '15 minutes',
+      keyGenerator: request => {
+        const username = typeof (request.body as Credentials | undefined)?.username === 'string'
+          ? (request.body as Credentials).username.trim().toLocaleLowerCase()
+          : '<invalid>';
+        return `${request.ip}:${username}`;
+      },
+    } },
     schema: { body: credentials, response: { 200: sessionSchema, 400: errorResponse, 401: errorResponse, 429: errorResponse } },
   }, async (request, reply) => {
     const username = request.body.username.trim();
-    const user = app.db.prepare('SELECT id, username, password_hash, role, disabled, created_at, updated_at FROM users WHERE username = ? COLLATE NOCASE')
+    const user = app.db.prepare('SELECT id, username, password_hash, role, disabled, created_at, updated_at, must_change_password, is_test_account FROM users WHERE username = ? COLLATE NOCASE')
       .get(username) as UserRecord | undefined;
     const validPassword = await verifyPassword(user?.password_hash ?? dummyPasswordHash, request.body.password);
     if (!user || !validPassword || user.disabled) throw new HttpError(401, 'LOGIN_FAILED', '用户名或密码错误，或账号已停用。');
@@ -81,7 +91,7 @@ export async function registerAuthRoutes(app: FastifyInstance, dummyPasswordHash
       response: { 200: sessionSchema, 400: errorResponse, 401: errorResponse },
     },
   }, async (request, reply) => {
-    const user = app.db.prepare('SELECT id, username, password_hash, role, disabled, created_at, updated_at FROM users WHERE id = ?')
+    const user = app.db.prepare('SELECT id, username, password_hash, role, disabled, created_at, updated_at, must_change_password, is_test_account FROM users WHERE id = ?')
       .get(request.authUser!.id) as UserRecord | undefined;
     if (!user || !await verifyPassword(user.password_hash, request.body.currentPassword)) throw new HttpError(401, 'CURRENT_PASSWORD_INVALID', '当前密码不正确。');
     if (!isValidPassword(request.body.newPassword) || request.body.currentPassword === request.body.newPassword) {
@@ -92,11 +102,11 @@ export async function registerAuthRoutes(app: FastifyInstance, dummyPasswordHash
     const tokenHash = digestSessionToken(newToken);
     const expiresAt = request.authUser!.sessionExpiresAt;
     inTransaction(app.db, () => {
-      app.db.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?').run(passwordHash, new Date().toISOString(), user.id);
+      app.db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?').run(passwordHash, new Date().toISOString(), user.id);
       app.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id);
       app.db.prepare('INSERT INTO sessions(token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
         .run(tokenHash, user.id, new Date().toISOString(), expiresAt);
     });
-    return reply.send({ user: safeUser({ ...user, password_hash: passwordHash, updated_at: new Date().toISOString() }), token: newToken, expiresAt });
+    return reply.send({ user: safeUser({ ...user, password_hash: passwordHash, must_change_password: 0, updated_at: new Date().toISOString() }), token: newToken, expiresAt });
   });
 }

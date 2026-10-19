@@ -16,7 +16,9 @@ Authenticated requests use `Authorization: Bearer <session-token>`. Session toke
 | `POST` | `/api/auth/password` | Session | Change the current password and rotate the current session. |
 | `GET` | `/api/banks` | Session | List enabled banks, active version counts, and that version's exam rules. |
 
-`POST /api/auth/login` accepts `{ "username", "password", "remember?" }`. Login errors intentionally do not distinguish an unknown username, wrong password, or disabled account.
+`POST /api/auth/login` accepts `{ "username", "password", "remember?" }`. Login errors intentionally do not distinguish an unknown username, wrong password, or disabled account. Responses include `user.mustChangePassword` and `user.isTestAccount`; they never contain the password or encoded password hash. Login attempts are rate limited by the server-observed client address and normalized username.
+
+New accounts and administrator password resets set `mustChangePassword=true`. Until the user changes the password, authenticated requests other than `GET /api/auth/me`, `POST /api/auth/password`, and `POST /api/auth/logout` return `403 PASSWORD_CHANGE_REQUIRED`. Password change requires the current password and a new password of at least 12 characters. A successful change atomically updates the Argon2id hash, clears the forced-change state, revokes all prior sessions, and issues a replacement session. Existing users receive `mustChangePassword=false` by default during V3 migration.
 
 ## Local management
 
@@ -25,10 +27,10 @@ The `/admin` page and management APIs enforce loopback access on the server sock
 | Method | Path | Access | Purpose |
 | --- | --- | --- | --- |
 | `GET` | `/api/admin/status` | Loopback | Initialization and database migration status. |
-| `GET` | `/api/admin/users` | Loopback + admin session | List accounts without password hashes. |
-| `POST` | `/api/admin/users` | Loopback + admin session | Create a normal user. |
+| `GET` | `/api/admin/users` | Loopback + admin session | List accounts without password hashes; includes test-account and forced-change flags. |
+| `POST` | `/api/admin/users` | Loopback + admin session | Create a normal user; optional `{ "isTestAccount": true }` marker; forces first-login password change. |
 | `PATCH` | `/api/admin/users/:id` | Loopback + admin session | Enable or disable a user; disabling revokes all sessions. |
-| `POST` | `/api/admin/users/:id/reset-password` | Loopback + admin session | Set a new password and revoke existing sessions. |
+| `POST` | `/api/admin/users/:id/reset-password` | Loopback + admin session | Set a new password, require its first-use change, and revoke existing sessions. |
 | `GET` | `/api/admin/banks` | Loopback + admin session | List enabled and disabled banks. |
 | `GET` | `/api/admin/imports` | Loopback + admin session | List recent import jobs. |
 | `POST` | `/api/admin/imports/preview` | Loopback + admin session | Parse and validate a multipart `.xlsx` file without importing it. |
@@ -37,6 +39,8 @@ The `/admin` page and management APIs enforce loopback access on the server sock
 | `PUT` | `/api/admin/banks/:id/rules` | Loopback + admin session | Update rules for the active bank version. |
 
 Import preview reports the sheet, question totals by type, missing answers, row validation errors, duplicate stems, file fingerprint, and existing-version detection. Confirmation is a separate request. A blocked preview cannot be confirmed; identical files are idempotently recognized.
+
+The `accounts:provision` server CLI is an operator-only local operation, not an HTTP endpoint. It requires an interactive terminal, a same-owner `0600` manifest, and explicit `--confirm`; it creates four ordinary accounts including exactly one test marker, writes randomly generated initial credentials into a separate `0700` data-directory subdirectory as a `0600` file, and refuses if any requested username already exists. The file is a one-time handoff and must be removed after delivery. It never writes credentials to stdout or logs.
 
 ## Daily practice and learning data
 

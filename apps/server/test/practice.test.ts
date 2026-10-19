@@ -19,6 +19,7 @@ let firstQuestionIds: string[] = [];
 let adminToken = '';
 let resumableSessionId = '';
 let persistedWrongSessionId = '';
+const changedPasswords = new Map<string, string>();
 
 async function request(path: string, options: { method?: string; token?: string; body?: unknown } = {}) {
   const headers = new Headers();
@@ -32,9 +33,15 @@ async function request(path: string, options: { method?: string; token?: string;
 }
 
 async function login(username: string) {
-  const { response, payload } = await request('/api/auth/login', { method: 'POST', body: { username, password: 'test-password-1234!' } });
+  const password = changedPasswords.get(username) ?? 'test-password-1234!';
+  const { response, payload } = await request('/api/auth/login', { method: 'POST', body: { username, password } });
   assert.equal(response.status, 200);
-  return payload.token as string;
+  if (!payload.user.mustChangePassword) return payload.token as string;
+  const newPassword = `changed-${username}-password-2026!`;
+  const changed = await request('/api/auth/password', { method: 'POST', token: payload.token, body: { currentPassword: password, newPassword } });
+  assert.equal(changed.response.status, 200);
+  changedPasswords.set(username, newPassword);
+  return changed.payload.token as string;
 }
 
 async function createSession(mode: string, quantity?: number) {

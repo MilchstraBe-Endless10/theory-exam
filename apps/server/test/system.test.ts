@@ -68,7 +68,7 @@ test('P1 server, authentication, SQLite, and two-phase Excel imports', async t =
   await t.test('migrations enable foreign keys, WAL, and restrictive local data permissions', () => {
     assert.equal(Number((app.db.prepare('PRAGMA foreign_keys').get() as { foreign_keys: number }).foreign_keys), 1);
     assert.equal(String((app.db.prepare('PRAGMA journal_mode').get() as { journal_mode: string }).journal_mode).toLowerCase(), 'wal');
-    assert.equal(Number((app.db.prepare('SELECT MAX(version) AS n FROM schema_migrations').get() as { n: number }).n), 2);
+    assert.equal(Number((app.db.prepare('SELECT MAX(version) AS n FROM schema_migrations').get() as { n: number }).n), 3);
     assert.equal(statSync(temporaryDirectory).mode & 0o777, 0o700);
     assert.equal(statSync(databasePath).mode & 0o777, 0o600);
   });
@@ -97,6 +97,7 @@ test('P1 server, authentication, SQLite, and two-phase Excel imports', async t =
     assert.equal(wrong.response.status, 401);
     const login = await request('/api/auth/login', { method: 'POST', body: { username: 'LEARNER', password } });
     assert.equal(login.response.status, 200);
+    assert.equal((login.payload as { user: { mustChangePassword: boolean } }).user.mustChangePassword, true);
     let userToken = (login.payload as { token: string }).token;
     const userMe = await request(`/api/auth/me?user_id=${adminSession.user.id}`, { token: userToken });
     assert.equal((userMe.payload as { id: string }).id, learner.id);
@@ -259,7 +260,11 @@ test('P1 server, authentication, SQLite, and two-phase Excel imports', async t =
     assert.equal((await request('/api/admin/users', { token: adminToken })).response.status, 200);
     const login = await request('/api/auth/login', { method: 'POST', body: { username: 'learner', password } });
     assert.equal(login.response.status, 200);
-    const banks = await request('/api/banks', { token: (login.payload as { token: string }).token });
+    const initialToken = (login.payload as { token: string }).token;
+    assert.equal((login.payload as { user: { mustChangePassword: boolean } }).user.mustChangePassword, true);
+    const changed = await request('/api/auth/password', { method: 'POST', token: initialToken, body: { currentPassword: password, newPassword: 'after-reset-password-1234!' } });
+    assert.equal(changed.response.status, 200);
+    const banks = await request('/api/banks', { token: (changed.payload as { token: string }).token });
     assert.equal(banks.response.status, 200);
     assert.equal((banks.payload as { items: unknown[] }).items.length, 2);
   });

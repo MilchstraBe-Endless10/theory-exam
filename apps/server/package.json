@@ -17,6 +17,7 @@
     "db:status": "tsx src/cli.ts status",
     "db:clean-test": "tsx src/cli.ts clean-test",
     "admin:init": "tsx src/cli.ts admin:init",
+    "accounts:provision": "tsx src/cli.ts accounts:provision",
     "verify:local-import": "tsx scripts/verify-local-import.ts"
   },
   "dependencies": {

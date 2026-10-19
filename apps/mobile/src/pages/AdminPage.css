@@ -38,7 +38,10 @@
 .admin-welcome button, .admin-user-actions button { min-height: 34px; padding: 0 11px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text-secondary); font: inherit; font-size: 12px; cursor: pointer; }
 .admin-section-title { display: flex; align-items: flex-start; gap: 11px; margin-bottom: 17px; }
 .admin-section-title > svg { flex: 0 0 auto; color: var(--primary); }
-.admin-create-user { display: grid; grid-template-columns: 1fr 1.3fr auto; align-items: end; gap: 12px; margin-bottom: 17px; }
+.admin-create-user { display: grid; grid-template-columns: minmax(145px, 1fr) minmax(180px, 1.3fr) auto auto; align-items: end; gap: 12px; margin-bottom: 17px; }
+.admin-test-flag { min-height: 40px; align-content: center; }
+.admin-test-flag span { display: flex; align-items: center; gap: 7px; }
+.admin-test-flag input { width: 16px; min-height: 16px; margin: 0; accent-color: var(--primary); }
 .admin-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
 .admin-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }
 .admin-table th { padding: 10px 12px; background: #f8fafd; color: var(--text-muted); font-weight: 600; white-space: nowrap; }

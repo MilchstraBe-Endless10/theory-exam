@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
@@ -17,7 +17,7 @@ export interface BuildAppOptions {
   config?: ServerConfig;
   databasePath?: string;
   staticDir?: string;
-  logger?: boolean;
+  logger?: boolean | FastifyServerOptions['logger'];
 }
 
 function errorPayload(code: string, message: string) {
@@ -34,12 +34,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const db = openDatabase(config.databasePath);
   const app = Fastify({
     logger: options.logger === false ? false : {
-      level: 'info',
+      ...(typeof options.logger === 'object' ? options.logger : {}),
+      level: typeof options.logger === 'object' ? options.logger.level ?? 'info' : 'info',
       redact: {
         paths: [
-          'req.headers.authorization', 'req.headers.cookie', 'req.body.password',
-          'req.body.currentPassword', 'req.body.newPassword', 'req.body.initialPassword',
-          'req.body.token', 'req.body.sessionToken',
+          'req.body',
+          'req.headers.authorization', 'req.headers.cookie',
         ],
         censor: '[REDACTED]',
       },

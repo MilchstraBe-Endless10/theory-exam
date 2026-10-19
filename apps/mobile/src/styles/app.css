@@ -318,6 +318,16 @@ td { height: 40px; padding: 0 16px; border-bottom: 1px solid var(--border); }
 .password-change-form label { display: grid; gap: 6px; color: #435471; font-size: 12px; }
 .password-change-form input { width: 100%; min-height: 42px; padding: 0 11px; border: 1px solid #dfe5ef; border-radius: 8px; background: #fff; color: #1e2d49; font: inherit; }
 .password-change-form .sheet-done:disabled { opacity: .65; }
+.password-gate-backdrop { position: fixed; z-index: 300; inset: 0; display: grid; place-items: center; overflow: auto; padding: 20px; background: rgb(17 31 54 / 48%); }
+.password-gate-card { width: min(100%, 440px); padding: 25px; border: 1px solid var(--border); border-radius: 18px; background: #fff; box-shadow: 0 22px 70px rgb(15 35 68 / 22%); }
+.password-gate-icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 12px; background: #eef3ff; color: var(--primary); }
+.password-gate-card h1 { margin: 16px 0 6px; color: var(--text-primary); font-size: 20px; }
+.password-gate-card > p { margin: 0 0 18px; color: var(--text-muted); font-size: 13px; line-height: 1.65; }
+.password-gate-card form { display: grid; gap: 13px; }
+.password-gate-card label { display: grid; gap: 6px; color: var(--text-secondary); font-size: 12px; }
+.password-gate-card input { width: 100%; min-height: 42px; padding: 0 11px; border: 1px solid var(--border); border-radius: 9px; color: var(--text-primary); font: inherit; }
+.password-gate-card .mobile-button { width: 100%; min-height: 46px; margin-top: 2px; }
+.password-gate-card .mobile-button:disabled { opacity: .65; }
 .profile-bank-list { display: grid; gap: 8px; max-height: 52dvh; overflow: auto; padding: 12px 0; }
 .profile-bank-list > button { display: flex; min-height: 48px; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #e7ecf4; border-radius: 9px; background: #fff; color: #304260; text-align: left; }
 .profile-bank-list > button strong { font-size: 13px; }

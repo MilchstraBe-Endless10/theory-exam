@@ -1,6 +1,9 @@
-import { existsSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, unlinkSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
+import { dirname, join, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { provisionAccounts, type AccountProvisionSpec } from './account-provisioning.js';
 import { loadConfig } from './config.js';
 import { openDatabase, readDatabaseStatus, inTransaction } from './db/database.js';
 import { hashPassword, isValidPassword, newId } from './security.js';
@@ -85,6 +88,32 @@ if (command === 'admin:init') {
     const status = readDatabaseStatus(db);
     stdout.write(`${JSON.stringify({ database: 'ready', ...status }, null, 2)}\n`);
   } finally { db.close(); }
+} else if (command === 'accounts:provision') {
+  const manifestArgument = process.argv.indexOf('--manifest');
+  const manifestPath = manifestArgument >= 0 ? process.argv[manifestArgument + 1] : '';
+  if (!process.argv.includes('--confirm') || !stdin.isTTY || !manifestPath) {
+    throw new Error('Usage: cli.ts accounts:provision --manifest /absolute/path/accounts.json --confirm (interactive local terminal only).');
+  }
+  const resolvedManifest = resolve(manifestPath);
+  const manifestStat = statSync(resolvedManifest);
+  const manifestDirectory = statSync(dirname(resolvedManifest));
+  const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+  if (resolvedManifest === projectRoot || resolvedManifest.startsWith(`${projectRoot}${sep}`)) {
+    throw new Error('Account manifest must stay outside the project checkout.');
+  }
+  if ((manifestStat.mode & 0o077) !== 0 || (manifestDirectory.mode & 0o077) !== 0 || (typeof process.getuid === 'function' && (manifestStat.uid !== process.getuid() || manifestDirectory.uid !== process.getuid()))) {
+    throw new Error('Account manifest must be owned by the current Linux user and accessible only to that user (mode 0600).');
+  }
+  const manifest = JSON.parse(readFileSync(resolvedManifest, 'utf8')) as { accounts?: AccountProvisionSpec[] };
+  if (!Array.isArray(manifest.accounts)) throw new Error('Manifest must contain an accounts array.');
+  const databasePath = loadConfig().databasePath;
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const credentialsPath = join(dirname(databasePath), 'issued-credentials', `initial-credentials-${stamp}.json`);
+  const db = openDatabase(databasePath);
+  try {
+    const result = await provisionAccounts(db, manifest.accounts, credentialsPath);
+    stdout.write(`Created ${result.createdCount} ordinary user accounts. One-time credentials: ${result.credentialsPath} (mode 0600).\n`);
+  } finally { db.close(); }
 } else {
-  throw new Error('Usage: cli.ts [migrate|status|clean-test|admin:init]');
+  throw new Error('Usage: cli.ts [migrate|status|clean-test|admin:init|accounts:provision --manifest PATH --confirm]');
 }

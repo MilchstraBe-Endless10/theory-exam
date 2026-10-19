@@ -48,6 +48,7 @@ export default function AdminPage() {
   const [imports, setImports] = useState<ImportJob[]>([]);
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [isTestAccount, setIsTestAccount] = useState(false);
   const [resetDrafts, setResetDrafts] = useState<Record<string, string>>({});
   const [bankKey, setBankKey] = useState('level4');
   const [bankName, setBankName] = useState('四级理论题库');
@@ -103,8 +104,8 @@ export default function AdminPage() {
   const createUser = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError(''); setMessage('');
     try {
-      await apiRequest('/api/admin/users', { base, method: 'POST', body: { username: newUsername, password: newPassword } });
-      setNewUsername(''); setNewPassword(''); setMessage('普通用户账号已创建。'); await loadAdminData();
+      await apiRequest('/api/admin/users', { base, method: 'POST', body: { username: newUsername, password: newPassword, isTestAccount } });
+      setNewUsername(''); setNewPassword(''); setIsTestAccount(false); setMessage('普通用户账号已创建，首次登录需要修改密码。'); await loadAdminData();
     } catch (actionError) { setError(errorText(actionError)); }
     finally { setBusy(false); }
   };
@@ -123,7 +124,7 @@ export default function AdminPage() {
     setError('');
     try {
       await apiRequest(`/api/admin/users/${user.id}/reset-password`, { base, method: 'POST', body: { newPassword: newValue } });
-      setResetDrafts(current => ({ ...current, [user.id]: '' })); setMessage(`${user.username} 的密码已重置，其登录会话已撤销。`);
+      setResetDrafts(current => ({ ...current, [user.id]: '' })); setMessage(`${user.username} 的密码已重置；下次登录需要修改，现有会话已撤销。`);
     } catch (actionError) { setError(errorText(actionError)); }
   };
 
@@ -171,8 +172,8 @@ export default function AdminPage() {
       {admin && <>
         <div className="admin-welcome"><div><strong>你好，{admin.username}</strong><span>管理员会话已认证</span></div><button onClick={() => void logout()}>退出管理</button></div>
         <section className="admin-card"><div className="admin-section-title"><IconUsers size={21} /><div><h2>用户管理</h2><p>账号由本机管理员创建；停用账号会立即撤销会话。</p></div></div>
-          <form className="admin-create-user" onSubmit={event => void createUser(event)}><label>用户名<input value={newUsername} onChange={event => setNewUsername(event.target.value)} required maxLength={64} /></label><label>初始密码（至少 12 位）<input type="password" value={newPassword} onChange={event => setNewPassword(event.target.value)} required minLength={12} /></label><button className="admin-primary" disabled={busy}>创建普通账号</button></form>
-          <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>用户名</th><th>状态</th><th>账号操作</th></tr></thead><tbody>{users.map(user => <tr key={user.id}><td><strong>{user.username}</strong><small>{user.role === 'admin' ? '管理员' : '普通用户'}</small></td><td><span className={`admin-user-status${user.disabled ? ' is-disabled' : ''}`}>{user.disabled ? '已停用' : '已启用'}</span></td><td>{user.role === 'user' ? <div className="admin-user-actions"><button onClick={() => void toggleUser(user)} disabled={busy}>{user.disabled ? '启用' : '停用'}</button><input type="password" aria-label={`${user.username} 的新密码`} placeholder="输入重置密码" minLength={12} value={resetDrafts[user.id] ?? ''} onChange={event => setResetDrafts(current => ({ ...current, [user.id]: event.target.value }))} /><button onClick={() => void resetPassword(user)}>重置密码</button></div> : <small>由本机初始化</small>}</td></tr>)}</tbody></table></div>
+          <form className="admin-create-user" onSubmit={event => void createUser(event)}><label>用户名<input value={newUsername} onChange={event => setNewUsername(event.target.value)} required maxLength={64} /></label><label>初始密码（至少 12 位）<input type="password" autoComplete="new-password" value={newPassword} onChange={event => setNewPassword(event.target.value)} required minLength={12} /></label><label className="admin-test-flag"><span><input type="checkbox" checked={isTestAccount} onChange={event => setIsTestAccount(event.target.checked)} />专用测试账号</span></label><button className="admin-primary" disabled={busy}>创建普通账号</button></form>
+          <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>用户名</th><th>状态</th><th>账号操作</th></tr></thead><tbody>{users.map(user => <tr key={user.id}><td><strong>{user.username}</strong><small>{user.role === 'admin' ? '管理员' : user.isTestAccount ? '普通用户 · 专用测试账号' : '普通用户'}{user.mustChangePassword ? ' · 首登待改密' : ''}</small></td><td><span className={`admin-user-status${user.disabled ? ' is-disabled' : ''}`}>{user.disabled ? '已停用' : '已启用'}</span></td><td>{user.role === 'user' ? <div className="admin-user-actions"><button onClick={() => void toggleUser(user)} disabled={busy}>{user.disabled ? '启用' : '停用'}</button><input type="password" autoComplete="new-password" aria-label={`${user.username} 的新密码`} placeholder="输入重置密码" minLength={12} value={resetDrafts[user.id] ?? ''} onChange={event => setResetDrafts(current => ({ ...current, [user.id]: event.target.value }))} /><button onClick={() => void resetPassword(user)}>重置密码</button></div> : <small>由本机初始化</small>}</td></tr>)}</tbody></table></div>
         </section>
         <section className="admin-card"><div className="admin-section-title"><IconBook size={21} /><div><h2>题库列表</h2><p>各题库独立版本和考试规则。</p></div></div>{banks.length ? <div className="admin-bank-grid">{banks.map(bank => <article key={bank.id}><div><strong>{bank.name}</strong><span>{bank.enabled ? '启用' : '停用'}</span></div><small>{bank.bankKey} · {bank.activeVersion ? `版本 ${bank.activeVersion.versionNumber} · ${bank.activeVersion.questionCount} 题` : '暂无版本'}</small>{bank.activeVersion && <small>单选 {bank.activeVersion.typeCounts.single ?? 0} · 多选 {bank.activeVersion.typeCounts.multiple ?? 0} · 判断 {bank.activeVersion.typeCounts.judgement ?? 0}</small>}{bank.examRules && <small>规则：{bank.examRules.singleCount}/{bank.examRules.multipleCount}/{bank.examRules.judgementCount} 题 · {bank.examRules.durationMinutes} 分钟 · 满分 {bank.examRules.singleCount * bank.examRules.singlePoints + bank.examRules.multipleCount * bank.examRules.multiplePoints + bank.examRules.judgementCount * bank.examRules.judgementPoints}</small>}</article>)}</div> : <p className="admin-empty-inline">尚无题库。上传并确认题库后会显示在这里。</p>}</section>
         <section className="admin-card"><div className="admin-section-title"><IconFileSpreadsheet size={21} /><div><h2>Excel 题库导入</h2><p>先预览校验，再由管理员明确确认写入；默认整批阻止错误行。</p></div></div>

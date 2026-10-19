@@ -13,8 +13,8 @@ const errorResponse = {
 };
 const adminHooks = [requireLocal, requireSession, requireAdmin];
 const userSchema = {
-  type: 'object', required: ['id', 'username', 'role', 'disabled', 'createdAt'], additionalProperties: false,
-  properties: { id: { type: 'string' }, username: { type: 'string' }, role: { type: 'string', enum: ['admin', 'user'] }, disabled: { type: 'boolean' }, createdAt: { type: 'string' } },
+  type: 'object', required: ['id', 'username', 'role', 'disabled', 'createdAt', 'mustChangePassword', 'isTestAccount'], additionalProperties: false,
+  properties: { id: { type: 'string' }, username: { type: 'string' }, role: { type: 'string', enum: ['admin', 'user'] }, disabled: { type: 'boolean' }, createdAt: { type: 'string' }, mustChangePassword: { type: 'boolean' }, isTestAccount: { type: 'boolean' } },
 };
 const ruleProperties = {
   singleCount: { type: 'integer', minimum: 0 },
@@ -36,7 +36,7 @@ const importConfirmationSchema = {
   },
 };
 
-interface CreateUserBody { username: string; password: string }
+interface CreateUserBody { username: string; password: string; isTestAccount?: boolean }
 interface ResetPasswordBody { newPassword: string }
 interface DisableUserBody { disabled: boolean }
 
@@ -53,7 +53,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/admin/users', { preHandler: adminHooks }, async () => {
-    const users = app.db.prepare('SELECT id, username, role, disabled, created_at, updated_at FROM users ORDER BY created_at DESC')
+    const users = app.db.prepare('SELECT id, username, role, disabled, created_at, updated_at, must_change_password, is_test_account FROM users ORDER BY created_at DESC')
       .all() as unknown as UserRecord[];
     return { items: users.map(safeUser) };
   });
@@ -61,7 +61,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Body: CreateUserBody }>('/api/admin/users', {
     preHandler: adminHooks,
     schema: {
-      body: { type: 'object', required: ['username', 'password'], additionalProperties: false, properties: { username: { type: 'string', minLength: 1, maxLength: 64 }, password: { type: 'string', minLength: 12, maxLength: 1024 } } },
+      body: { type: 'object', required: ['username', 'password'], additionalProperties: false, properties: { username: { type: 'string', minLength: 1, maxLength: 64 }, password: { type: 'string', minLength: 12, maxLength: 1024 }, isTestAccount: { type: 'boolean' } } },
       response: {
         201: { type: 'object', required: ['user'], additionalProperties: false, properties: { user: userSchema } },
         400: errorResponse,
@@ -74,10 +74,10 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     if (!username || /\s/.test(username) || !isValidPassword(request.body.password)) throw new HttpError(400, 'INVALID_CREDENTIALS', '用户名不能包含空白，密码至少 12 个字符。');
     const passwordHash = await hashPassword(request.body.password);
     const now = new Date().toISOString();
-    const user: UserRecord = { id: randomUUID(), username, password_hash: passwordHash, role: 'user', disabled: 0, created_at: now, updated_at: now };
+    const user: UserRecord = { id: randomUUID(), username, password_hash: passwordHash, role: 'user', disabled: 0, created_at: now, updated_at: now, must_change_password: 1, is_test_account: Number(request.body.isTestAccount ?? false) };
     try {
-      app.db.prepare('INSERT INTO users(id, username, password_hash, role, disabled, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)')
-        .run(user.id, user.username, user.password_hash, user.role, now, now);
+      app.db.prepare('INSERT INTO users(id, username, password_hash, role, disabled, created_at, updated_at, must_change_password, is_test_account) VALUES (?, ?, ?, ?, 0, ?, ?, 1, ?)')
+        .run(user.id, user.username, user.password_hash, user.role, now, now, user.is_test_account);
     } catch (error) {
       if (error instanceof Error && error.message.includes('UNIQUE')) throw new HttpError(409, 'USERNAME_EXISTS', '该用户名已存在。');
       throw error;
@@ -89,7 +89,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     preHandler: adminHooks,
     schema: { params: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: { type: 'string', minLength: 36, maxLength: 36 } } }, body: { type: 'object', required: ['disabled'], additionalProperties: false, properties: { disabled: { type: 'boolean' } } }, response: { 200: { type: 'object', required: ['user'], additionalProperties: false, properties: { user: userSchema } }, 403: errorResponse, 404: errorResponse } },
   }, async request => {
-    const user = app.db.prepare("SELECT id, username, password_hash, role, disabled, created_at, updated_at FROM users WHERE id = ? AND role = 'user'")
+    const user = app.db.prepare("SELECT id, username, password_hash, role, disabled, created_at, updated_at, must_change_password, is_test_account FROM users WHERE id = ? AND role = 'user'")
       .get(request.params.id) as UserRecord | undefined;
     if (!user) throw new HttpError(404, 'USER_NOT_FOUND', '普通用户账号不存在。');
     const now = new Date().toISOString();
@@ -109,7 +109,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     if (!isValidPassword(request.body.newPassword)) throw new HttpError(400, 'WEAK_PASSWORD', '密码至少需要 12 个字符。');
     const passwordHash = await hashPassword(request.body.newPassword);
     inTransaction(app.db, () => {
-      app.db.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?').run(passwordHash, new Date().toISOString(), user.id);
+      app.db.prepare('UPDATE users SET password_hash = ?, must_change_password = 1, updated_at = ? WHERE id = ?').run(passwordHash, new Date().toISOString(), user.id);
       app.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id);
     });
     return { ok: true as const };

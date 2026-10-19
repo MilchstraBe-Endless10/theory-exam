@@ -4,6 +4,8 @@ export interface ApiUser {
   role: 'admin' | 'user';
   disabled: boolean;
   createdAt: string;
+  mustChangePassword?: boolean;
+  isTestAccount?: boolean;
 }
 
 export interface ApiSession {

@@ -228,4 +228,12 @@ export const migrations: Migration[] = [
       CREATE INDEX mistakes_user_bank_version_idx ON mistake_states(user_id, bank_id, bank_version_id, mastery_status);
     `,
   },
+  {
+    version: 3,
+    name: 'account_test_marker_and_forced_password_change',
+    sql: `
+      ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0 CHECK (must_change_password IN (0, 1));
+      ALTER TABLE users ADD COLUMN is_test_account INTEGER NOT NULL DEFAULT 0 CHECK (is_test_account IN (0, 1));
+    `,
+  },
 ];

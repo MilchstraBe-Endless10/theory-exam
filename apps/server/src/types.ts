@@ -12,6 +12,8 @@ export interface UserRecord {
   disabled: number;
   created_at: string;
   updated_at: string;
+  must_change_password: number;
+  is_test_account: number;
 }
 
 export interface AuthenticatedUser extends Omit<UserRecord, 'password_hash'> {
@@ -39,6 +41,8 @@ export function safeUser(user: UserRecord | AuthenticatedUser) {
     role: user.role,
     disabled: Boolean(user.disabled),
     createdAt: user.created_at,
+    mustChangePassword: Boolean(user.must_change_password),
+    isTestAccount: Boolean(user.is_test_account),
   };
 }
 

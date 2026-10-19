@@ -15,6 +15,7 @@ const workbookPath = join(projectDir, 'local-input', '四级理论试题.xlsx');
 const screenshotDir = process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR ? resolve(process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR) : '';
 const adminPassword = `P1BrowserAdmin-${randomBytes(16).toString('hex')}!`;
 const userPassword = `P1BrowserUser-${randomBytes(16).toString('hex')}!`;
+const changedUserPassword = `P1BrowserChanged-${randomBytes(16).toString('hex')}!`;
 const temporaryDirectory = mkdtempSync(join(tmpdir(), 'theory-exam-p1-browser-'));
 const profileDirectory = mkdtempSync(join(tmpdir(), 'theory-exam-p1-chromium-'));
 const processes = [];
@@ -89,8 +90,14 @@ async function clickContaining(selector, label) {
 }
 
 async function clickAnswer(letter, root = '.mobile-route') {
-  const clicked = await evaluate(`(() => { const selector = ${JSON.stringify(root)} + ' .answer-option'; const element = [...document.querySelectorAll(selector)].find(item => item.innerText.trim().startsWith(${JSON.stringify(`${letter}.`)})); if (!element) return false; element.click(); return true; })()`);
-  assert.equal(clicked, true, `Could not select option ${letter}.`);
+  const state = await evaluate(`(() => {
+    const selector = ${JSON.stringify(root)} + ' .practice-live-screen .answer-option, ' + ${JSON.stringify(root)} + ' .question-screen .answer-option';
+    const options = [...document.querySelectorAll(selector)];
+    const element = options.find(item => item.querySelector('strong')?.innerText.trim() === ${JSON.stringify(`${letter}.`)});
+    if (element) element.click();
+    return { clicked: Boolean(element), options: options.map(item => item.querySelector('strong')?.innerText.trim() || '') };
+  })()`);
+  assert.equal(state.clicked, true, `Could not select option ${letter}; rendered labels: ${state.options.join(', ') || '(none)'}.`);
 }
 
 async function fill(selector, value) {
@@ -233,9 +240,38 @@ try {
   await fill('.login-content input[autocomplete="username"]', 'p1-browser-learner');
   await fill('.login-content input[autocomplete="current-password"]', userPassword);
   await click('.login-content form button[type="submit"]');
-  await waitFor(async () => (await evaluate('location.pathname')) === '/' && (await bodyText()).includes('p1-browser-learner') && (await bodyText()).includes('1283 道题'), 'Ordinary user login did not restore the account and imported bank on the learning home.');
+  let loginResolved = false;
+  try {
+    await waitFor(async () => evaluate('Boolean(document.querySelector(".password-gate-card") || document.querySelector(".login-content .form-error") || location.pathname === "/")'), 'Login did not resolve.', 8000);
+    loginResolved = true;
+  } catch { /* include safe UI/session state below */ }
+  const firstLoginState = await evaluate('({ gate: Boolean(document.querySelector(".password-gate-card")), error: document.querySelector(".login-content .form-error")?.innerText ?? "", route: location.pathname, tokenStored: Boolean(localStorage.getItem("theory-exam.session-token") || sessionStorage.getItem("theory-exam.session-token.temporary")), loginButtonDisabled: document.querySelector(".login-content button[type=submit]")?.disabled ?? null, body: document.body.innerText.slice(0, 260) })');
+  assert.ok(loginResolved && firstLoginState.gate, `First-login password change gate did not appear: ${JSON.stringify(firstLoginState)}`);
+  await fill('.password-gate-card input[autocomplete="current-password"]', userPassword);
+  await fill('.password-gate-card input[autocomplete="new-password"]', changedUserPassword);
+  await fill('.password-gate-card label:nth-of-type(3) input', changedUserPassword);
+  await click('.password-gate-card button[type="submit"]');
+  await waitFor(async () => !(await evaluate('Boolean(document.querySelector(".password-gate-card"))')), 'First-login password change did not clear the gate.');
+  try {
+    await waitFor(async () => (await evaluate('location.pathname')) === '/' && (await bodyText()).includes('你好，p1-browser-learner') && (await bodyText()).includes('1283 道题'), 'Ordinary user login did not restore the account and imported bank on the learning home.');
+  } catch (error) {
+    const safeState = await evaluate(`(async () => {
+      let banks = { status: 0, items: [] };
+      try {
+        const token = localStorage.getItem('theory-exam.session-token') || sessionStorage.getItem('theory-exam.session-token.temporary') || '';
+        const response = await fetch(${JSON.stringify(`${serverOrigin}/api/banks`)}, { headers: { Authorization: 'Bearer ' + token } });
+        const payload = await response.json();
+        banks = { status: response.status, items: Array.isArray(payload.items) ? payload.items.map(bank => ({ name: bank.name, questionCount: bank.activeVersion?.questionCount ?? null })) : [], errorCode: payload.error?.code || '' };
+      } catch (reason) { banks.errorCode = reason instanceof Error ? reason.name : 'fetch-error'; }
+      return { route: location.pathname, gate: Boolean(document.querySelector('.password-gate-card')), body: document.body.innerText.slice(0, 500), banks };
+    })()`);
+    console.error('Safe post-change home diagnostics:', JSON.stringify(safeState));
+    throw error;
+  }
   const homeText = await bodyText();
   assert.ok(homeText.includes('p1-browser-learner'), 'The authenticated ordinary user is not shown on the learning home.');
+  const persistedClientValues = await evaluate('JSON.stringify([...Object.values(localStorage), ...Object.values(sessionStorage)])');
+  assert.ok(!persistedClientValues.includes(userPassword) && !persistedClientValues.includes(changedUserPassword), 'Browser storage persisted a password.');
   await capture('390x844-ordinary-user-login.png');
   console.log('PASS browser server health check and ordinary user login');
 
@@ -251,7 +287,13 @@ try {
   await navigate(`${viteOrigin}/practice`);
   await waitFor(async () => (await evaluate('document.querySelectorAll("button.practice-choice").length')) === 8, 'Mobile practice modes did not reload.');
   await clickContaining('button.practice-choice', '单选题练习');
-  await waitFor(async () => (await evaluate('location.pathname === "/practice/answer" && !!document.querySelector(".practice-live-screen[data-question-id]")')), 'A real server-backed practice question did not load.');
+  try {
+    await waitFor(async () => await evaluate('location.pathname === "/practice/answer" && Boolean(document.querySelector(".practice-live-screen[data-question-id] .answer-option"))'), 'A real server-backed practice question did not load.');
+  } catch (error) {
+    const state = await evaluate('({ route: location.pathname, body: document.body.innerText.slice(0, 400), practiceScreen: Boolean(document.querySelector(".practice-live-screen")), optionCount: document.querySelectorAll(".mobile-route .answer-option").length })');
+    console.error('Safe practice-load diagnostics:', JSON.stringify(state));
+    throw error;
+  }
   const sessionId = await evaluate('new URLSearchParams(location.search).get("session")');
   const firstQuestionId = await evaluate('document.querySelector(".practice-live-screen").dataset.questionId');
   const questionText = await bodyText();
@@ -265,7 +307,7 @@ try {
   await capture('1536x1024-practice-question.png');
   await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await navigate(`${viteOrigin}/practice/answer?session=${sessionId}&position=1`);
-  await waitFor(async () => await evaluate('Boolean(document.querySelector(".practice-live-screen[data-question-id]"))'), 'Mobile live practice question did not reload.');
+  await waitFor(async () => await evaluate('Boolean(document.querySelector(".practice-live-screen[data-question-id] .answer-option"))'), 'Mobile live practice question did not reload.');
   const firstQuestion = testDatabase.prepare('SELECT answer_json FROM questions WHERE id = ?').get(firstQuestionId);
   assert.ok(firstQuestion, 'Practice question was not read from the imported SQLite bank.');
   const correctLetter = JSON.parse(firstQuestion.answer_json)[0];
@@ -294,7 +336,7 @@ try {
   await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
 
   await clickContaining('.question-footer button', '下一题');
-  await waitFor(async () => (await evaluate('location.pathname === "/practice/answer" && Number(new URLSearchParams(location.search).get("position")) === 2')) && await evaluate('Boolean(document.querySelector(".practice-live-screen[data-question-id]"))'), 'Could not move to the next question in the session.');
+  await waitFor(async () => await evaluate(`location.pathname === "/practice/answer" && Number(new URLSearchParams(location.search).get("position")) === 2 && Boolean(document.querySelector(".practice-live-screen[data-question-id] .answer-option")) && document.querySelector(".practice-live-screen").dataset.questionId !== ${JSON.stringify(firstQuestionId)}`), 'Could not move to the next question in the session.');
   const secondQuestionId = await evaluate('document.querySelector(".practice-live-screen").dataset.questionId');
   const secondQuestion = testDatabase.prepare('SELECT answer_json, options_json FROM questions WHERE id = ?').get(secondQuestionId);
   assert.ok(secondQuestion, 'Second question was not read from the imported SQLite bank.');
@@ -323,7 +365,7 @@ try {
   await waitFor(async () => (await bodyText()).includes('已退出登录'), 'Server-confirmed logout did not complete.');
   await navigate(`${viteOrigin}/login`);
   await fill('.login-content input[autocomplete="username"]', 'p1-browser-learner');
-  await fill('.login-content input[autocomplete="current-password"]', userPassword);
+  await fill('.login-content input[autocomplete="current-password"]', changedUserPassword);
   await click('.login-content form button[type="submit"]');
   await waitFor(async () => (await evaluate('location.pathname')) === '/' && (await bodyText()).includes('练习正确率'), 'Relogin did not restore the real progress dashboard.');
   await waitFor(async () => await evaluate('document.querySelectorAll(".mobile-stat-card strong")[0]?.innerText === "2" && document.querySelectorAll(".mobile-stat-card strong")[1]?.innerText === "50%"'), 'Mobile dashboard did not finish loading persisted learning statistics.');

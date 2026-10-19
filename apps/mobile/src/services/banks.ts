@@ -50,7 +50,7 @@ export function useBanks() {
       setError('');
       return;
     }
-    if (!user || !serverAddress) {
+    if (!user || !serverAddress || user.mustChangePassword) {
       setBanks([]);
       setLoading(false);
       setError('');
@@ -65,7 +65,7 @@ export function useBanks() {
       .catch(requestError => { if (current) setError(requestError instanceof Error ? requestError.message : '题库读取失败。'); })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
-  }, [preview, serverAddress, user?.id]);
+  }, [preview, serverAddress, user?.id, user?.mustChangePassword]);
 
   const activeBank = banks.find(bank => bank.id === selectedBankId) ?? banks[0] ?? null;
   const selectBank = (id: string) => {
