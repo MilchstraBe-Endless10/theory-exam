@@ -141,4 +141,4 @@
 - TLS 研究：MeFrp TCP 高位端口本身不提供浏览器/APP 到本机 TLS。普通浏览器不会使用 Android APP 的私有信任锚，不能忽略证书警告。候选为免费可控 DNS 子域名 + DNS-01 公信证书 + TCP TLS 透传；Let’s Encrypt IP cert 有效约 160 小时并要求通过标准 80/443 验证 IP 控制，当前 MeFrp 分配 IP/高位端口不满足可控性。未选 DNS 服务、未申请证书；手机 API 3000 仍为旧 P4/V4 HTTP 进程，公网禁止开放。
 - 边界确认：正式库 V4/四个普通账号，没有迁移、密码、管理员、题库操作；当前旧 3000 与原 Vite preview 进程未被替换；Web fixture 只用临时 SQLite/API，已停止；8080 已释放。两条 MeFrp 隧道未启动，未改 systemd/证书/公网配置。
 - 下一步：P5-A 仍需在具备 Android JDK/SDK/adb 的主机完成 APK 构建/安装与原生网络/扫码/更新验证。P5-B 前必须提供具体 TLS/DNS 方案及包含回滚的旧 3000 服务升级、V4→V6 正式迁移和隧道变更清单并获得用户另行确认。
-- 双入口实现提交：`fb00f720a5d9a02927c834579f0b797570d5c159`（<https://github.com/MilchstraBe-Endless10/theory-exam/commit/fb00f720a5d9a02927c834579f0b797570d5c159>）；远端核对在本轮提交后进行。
+- 双入口实现提交：`fb00f720a5d9a02927c834579f0b797570d5c159`（<https://github.com/MilchstraBe-Endless10/theory-exam/commit/fb00f720a5d9a02927c834579f0b797570d5c159>）；记忆同步提交 `6b2e4da7356f85b83283be18bc329818d9f7a845` 已推送，普通 Push 后 `HEAD`、`origin/feat/p5-a-android-security` 和 `git ls-remote` 一致；`main` 仍为起始基线。
