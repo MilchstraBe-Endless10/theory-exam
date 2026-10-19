@@ -1,4 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { BarcodeFormat, BarcodeScanner } from '@capacitor-mlkit/barcode-scanning';
 import {
   IconArrowLeft, IconBell, IconBook, IconChartBar, IconCheck,
   IconChevronRight, IconCircleCheck, IconClockHour4, IconDots, IconFileText,
@@ -16,6 +18,7 @@ import {
   submitPracticeAnswer, type PracticeMode, type PracticeProgress,
 } from '../services/practice';
 import { useMistakeStats } from '../services/reviews';
+import { checkForUpdate, downloadAndOpenUpdate, type CheckedUpdate } from '../services/updates';
 
 const preview = import.meta.env.DEV && new URLSearchParams(window.location.search).get('preview') === '1';
 const href = (path: string) => preview ? `${path}${path.includes('?') ? '&' : '?'}preview=1` : path;
@@ -122,9 +125,18 @@ function allowedServerAddress(value: string) {
   try {
     const url = new URL(value.trim());
     if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password) return false;
-    const localHost = /^(localhost|127(?:\.\d{1,3}){3}|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|\[::1\])$/i.test(url.hostname);
-    return url.protocol === 'https:' || localHost;
+    const loopbackHost = /^(localhost|127(?:\.\d{1,3}){3}|\[::1\])$/i.test(url.hostname);
+    return url.protocol === 'https:' || (import.meta.env.DEV && loopbackHost);
   } catch { return false; }
+}
+
+function addressFromServerQr(raw: string): string | null {
+  let candidate = raw.trim();
+  try {
+    const payload = JSON.parse(candidate) as { serverAddress?: unknown; serverUrl?: unknown };
+    candidate = typeof payload.serverAddress === 'string' ? payload.serverAddress : typeof payload.serverUrl === 'string' ? payload.serverUrl : candidate;
+  } catch { /* Plain URL QR codes are supported too. */ }
+  return allowedServerAddress(candidate) ? new URL(candidate).toString().replace(/\/+$/, '') : null;
 }
 
 export function ConnectPage() {
@@ -134,10 +146,46 @@ export function ConnectPage() {
   const [connecting, setConnecting] = useState(false);
   const notice = useNotice();
   const { refreshServer } = useAuth();
+  useEffect(() => {
+    const restoreScan = (event: Event) => {
+      const detail = (event as CustomEvent<{ pluginId?: string; methodName?: string; success?: boolean; data?: { barcodes?: Array<{ rawValue?: string }> } }>).detail;
+      if (detail?.pluginId !== 'BarcodeScanner' || detail.methodName !== 'scan' || !detail.success) return;
+      const address = addressFromServerQr(detail.data?.barcodes?.[0]?.rawValue ?? '');
+      if (!address) { setError('恢复的二维码内容无效，请重新扫码或手动输入服务器地址。'); return; }
+      setAddress(address); setManualOpen(true); notice.notify('已恢复扫码地址，请验证连接。');
+    };
+    window.addEventListener('theory-exam:app-restored-result', restoreScan);
+    return () => window.removeEventListener('theory-exam:app-restored-result', restoreScan);
+  }, []);
+  const scanServerQr = async () => {
+    setError('');
+    if (!Capacitor.isNativePlatform()) { notice.notify('二维码扫描仅在 Android APP 中可用。'); return; }
+    try {
+      const permission = await BarcodeScanner.checkPermissions();
+      const granted = permission.camera === 'granted' || (await BarcodeScanner.requestPermissions()).camera === 'granted';
+      if (!granted) { setError('相机权限未授予。请在系统设置允许相机后重试，或手动输入服务器地址。'); return; }
+      const scanner = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable();
+      if (!scanner.available) {
+        await BarcodeScanner.installGoogleBarcodeScannerModule();
+        notice.notify('Android 正在准备扫码组件，请稍后重试。');
+        return;
+      }
+      const result = await BarcodeScanner.scan({ formats: [BarcodeFormat.QrCode] });
+      const raw = result.barcodes[0]?.rawValue?.trim();
+      if (!raw) { notice.notify('没有读取到二维码内容。'); return; }
+      const address = addressFromServerQr(raw);
+      if (!address) { setError('二维码中的服务器地址无效。正式 APP 连接必须使用可信 HTTPS。'); return; }
+      setAddress(address);
+      setManualOpen(true);
+      notice.notify('已读取地址，请验证连接。');
+    } catch (scanError) {
+      setError(scanError instanceof Error ? `扫码失败：${scanError.message}` : '扫码失败，请手动输入服务器地址。');
+    }
+  };
   const connect = async () => {
     setError('');
     if (!allowedServerAddress(address)) {
-      setError('请输入有效地址。公网地址须使用 HTTPS；HTTP 仅适用于本机或局域网地址。');
+      setError('请输入有效服务器地址。正式 APP 与公网连接必须使用可信 HTTPS；HTTP 仅限浏览器开发环境中的本机回环地址。');
       return;
     }
     if (previewMode()) { notice.notify('开发预览与正式服务端隔离，未发起连接请求。'); return; }
@@ -156,7 +204,7 @@ export function ConnectPage() {
   return <Screen className="connect-screen" immersive>
     <Header back="/start" />
     <div className="auth-title"><h1>连接服务器</h1><p>请选择连接方式，连接你的学习服务器</p></div>
-    <button className="connect-option" onClick={() => notice.notify('扫码功能将在 Android 相机权限接入后提供。')}><span className="connect-option-icon tone-blue"><IconQrcode size={28} /></span><span><strong>扫码连接</strong><small>扫描电脑端二维码<br />快速连接服务器</small></span><IconChevronRight className="option-arrow" size={18} /></button>
+    <button className="connect-option" onClick={() => void scanServerQr()}><span className="connect-option-icon tone-blue"><IconQrcode size={28} /></span><span><strong>扫码连接</strong><small>扫描电脑端二维码<br />快速连接服务器</small></span><IconChevronRight className="option-arrow" size={18} /></button>
     <button className="connect-option" aria-expanded={manualOpen} onClick={() => setManualOpen(value => !value)}><span className="connect-option-icon tone-blue"><IconLink size={26} /></span><span><strong>手动连接</strong><small>输入服务器地址<br />进行连接</small></span><IconChevronRight className="option-arrow" size={18} /></button>
     {manualOpen && <section className="connect-manual"><label htmlFor="server-address">服务器地址</label><input id="server-address" value={address} onChange={e => setAddress(e.target.value)} placeholder="https://example.com" inputMode="url" autoCapitalize="none" />{error && <p className="form-error" role="alert">{error}</p>}<MobileButton onClick={connect} disabled={connecting}>{connecting ? '正在检查…' : '验证并连接'}</MobileButton></section>}
     <Link className="auth-footnote" to={href('/login')}>连接后即可登录你的账号</Link>
@@ -182,7 +230,7 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       const session = await apiRequest<ApiSession>('/api/auth/login', { base: serverAddress, method: 'POST', auth: false, body: { username, password, remember } });
-      saveSession(session, remember);
+      await saveSession(session, remember);
       setUser(session.user);
       setPassword('');
       navigate('/', { replace: true });
@@ -609,7 +657,7 @@ export function PersonalCenterPage() {
     setChangingPassword(true);
     try {
       const result = await apiRequest<ApiSession>('/api/auth/password', { method: 'POST', body: { currentPassword, newPassword } });
-      saveSession(result, persistentSession());
+      await saveSession(result, persistentSession());
       setUser(result.user);
       setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
       setPanel('');
@@ -629,10 +677,44 @@ export function PersonalCenterPage() {
     {panel && <div className="sheet-backdrop" role="presentation" onClick={() => setPanel('')}><section className="profile-sheet" role="dialog" aria-modal="true" aria-label={panel} onClick={e => e.stopPropagation()}><div className="sheet-heading"><strong>{panel}</strong><button aria-label="关闭" onClick={() => setPanel('')}><IconX size={21} /></button></div>
       {panel === '修改密码' && user && !preview ? <form className="password-change-form" onSubmit={changePassword}><label>当前密码<input type="password" autoComplete="current-password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} required /></label><label>新密码（至少 12 位）<input type="password" autoComplete="new-password" minLength={12} value={newPassword} onChange={event => setNewPassword(event.target.value)} required /></label><label>确认新密码<input type="password" autoComplete="new-password" minLength={12} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} required /></label>{panelError && <p className="form-error" role="alert">{panelError}</p>}<button className="sheet-done" disabled={changingPassword}>{changingPassword ? '正在保存…' : '修改密码'}</button></form>
         : panel === '题库切换' && user && !preview ? <div className="profile-bank-list">{panelError && <p className="form-error" role="alert">{panelError}</p>}{banks.length ? banks.map(bank => <button key={bank.id} className={selectedBank === bank.id ? 'is-selected' : ''} onClick={() => chooseBank(bank.id)}><strong>{bank.name}</strong><span>{bank.activeVersion?.questionCount ?? 0} 道题</span>{selectedBank === bank.id && <IconCheck size={18} />}</button>) : <div className="empty-state compact"><IconBook size={24} /><strong>服务端暂无已启用题库</strong><span>请联系本机管理员导入题库。</span></div>}</div>
+          : panel === '关于应用' ? <AppUpdatePanel disabled={preview} />
           : <div className="empty-state compact"><IconWifi size={24} /><strong>{preview ? '开发预览中的示例信息' : user ? (panel === '题库切换' ? '题库列表暂不可用' : `服务端状态：${serverStatus === 'connected' ? '已连接' : '连接异常'}`) : '需要连接并登录本地服务端'}</strong><span>{preview ? '该示例数据不会访问或修改正式服务端。' : serverAddress || '当前没有真实账号数据或服务器连接。'}</span></div>}
       {panel !== '修改密码' && <button className="sheet-done" onClick={() => setPanel('')}>知道了</button>}
     </section></div>}
   </Screen></ResponsivePage>;
+}
+
+function AppUpdatePanel({ disabled }: { disabled: boolean }) {
+  const [result, setResult] = useState<CheckedUpdate | null>(null);
+  const [message, setMessage] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [progress, setProgress] = useState<{ received: number; total: number | null } | null>(null);
+  const check = async () => {
+    setChecking(true); setMessage('');
+    try {
+      const value = await checkForUpdate();
+      setResult(value);
+      setMessage(value.available ? '' : '当前已是服务器提供的最新版本。');
+    } catch (error) { setMessage(error instanceof Error ? error.message : '版本检查失败，请重试。'); }
+    finally { setChecking(false); }
+  };
+  const download = async () => {
+    if (!result?.available) return;
+    setDownloading(true); setMessage(''); setProgress({ received: 0, total: null });
+    try {
+      await downloadAndOpenUpdate(result.manifest, (received, total) => setProgress({ received, total }));
+      setMessage('下载与 SHA-256 校验完成，已打开 Android 系统安装确认。');
+    } catch (error) { setMessage(error instanceof Error ? error.message : '下载或校验失败，请重试。'); }
+    finally { setDownloading(false); }
+  };
+  const progressText = progress ? `${progress.total ? Math.floor(progress.received * 100 / progress.total) : Math.round(progress.received / 1024)}${progress.total ? '%' : ' KB'}` : '';
+  return <div className="app-update-panel">
+    <p>只会从已认证本机服务获取更新。安装需要你在 Android 系统安装器中确认。</p>
+    <button className="sheet-done" disabled={disabled || checking || downloading} onClick={() => void check()}>{checking ? '正在检查…' : '检查更新'}</button>
+    {result && <section><strong>当前版本 {result.currentVersion}</strong>{result.available ? <><h3>发现版本 {result.manifest.version}</h3><p>{result.manifest.releaseNotes || '此版本没有更新说明。'}</p><p>应用标识与版本已检查；Android 系统安装器会验证签名连续性。</p><button className="sheet-done" disabled={downloading} onClick={() => void download()}>{downloading ? `正在下载 ${progressText}` : '下载并打开安装器'}</button></> : null}</section>}
+    {message && <p className="form-error" role="status">{message}</p>}
+  </div>;
 }
 
 function IconClipboardIcon(props: React.ComponentProps<typeof IconFileText>) {

@@ -16,6 +16,11 @@
     "db:migrate": "tsx src/cli.ts migrate",
     "db:status": "tsx src/cli.ts status",
     "db:clean-test": "tsx src/cli.ts clean-test",
+    "db:backup": "tsx src/cli.ts db:backup",
+    "db:backup:daily": "tsx src/cli.ts db:backup:daily",
+    "db:backup:verify": "tsx src/cli.ts db:backup:verify",
+    "db:restore": "tsx src/cli.ts db:restore",
+    "updates:sync": "tsx src/cli.ts updates:sync",
     "admin:init": "tsx src/cli.ts admin:init",
     "accounts:provision": "tsx src/cli.ts accounts:provision",
     "verify:local-import": "tsx scripts/verify-local-import.ts"

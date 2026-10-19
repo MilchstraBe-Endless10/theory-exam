@@ -128,9 +128,9 @@ test('P4 review rounds, mastery states, filters, ownership, recovery, and versio
     rmSync(databaseDir || temporaryDirectory, { recursive: true, force: true });
   });
 
-  await t.test('V5 is an additive migration; four fixture accounts remain ordinary and isolated', async () => {
-    assert.equal(migrations.at(-1)?.version, 5);
-    assert.equal(Number((app.db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get() as { version: number }).version), 5);
+  await t.test('V5 and V6 are additive migrations; four fixture accounts remain ordinary and isolated', async () => {
+    assert.equal(migrations.at(-1)?.version, 6);
+    assert.equal(Number((app.db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get() as { version: number }).version), 6);
     assert.equal(Number((app.db.prepare("SELECT COUNT(*) AS count FROM users WHERE role='user'").get() as { count: number }).count), 4);
     assert.equal(Number((app.db.prepare("SELECT COUNT(*) AS count FROM users WHERE role='user' AND is_test_account=1").get() as { count: number }).count), 1);
     const ordinaryAdminAttempt = await request('/api/admin/users', { token: tokens.get('review-test-account')! });

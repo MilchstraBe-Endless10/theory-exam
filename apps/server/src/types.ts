@@ -19,6 +19,7 @@ export interface UserRecord {
 export interface AuthenticatedUser extends Omit<UserRecord, 'password_hash'> {
   sessionTokenHash: string;
   sessionExpiresAt: string;
+  sessionCsrfToken: string;
 }
 
 declare module 'fastify' {

@@ -195,7 +195,7 @@ try {
   await click('.start-footer a');
   await waitFor(() => evaluate('location.pathname === "/connect"'), 'start button did not open server connection');
   await click('button.connect-option:not([aria-expanded])');
-  check((await evaluate('document.body.innerText')).includes('扫码功能将在 Android 相机权限接入后提供'), 'QR connection did not explain its current limitation');
+  check((await evaluate('document.body.innerText')).includes('二维码扫描仅在 Android APP 中可用'), 'QR connection did not explain that the native scanner is Android-only');
   await click('a.back-button');
   await waitFor(() => evaluate('location.pathname === "/start"'), 'connection back button did not return to start');
   pass('start and server connection navigation work; QR preview does not claim a connection');
@@ -224,8 +224,8 @@ try {
   await capture('390x844/02-connect-manual-expanded.png');
   await evaluate('(() => { const input = document.querySelector("#server-address"); const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; setter.call(input, "http://example.com"); input.dispatchEvent(new Event("input", { bubbles: true })); })()');
   await click('.connect-manual .mobile-button');
-  check((await evaluate('document.body.innerText')).includes('公网地址须使用 HTTPS'), 'public HTTP address was not rejected');
-  await evaluate('(() => { const input = document.querySelector("#server-address"); const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; setter.call(input, "http://192.168.1.10:3000"); input.dispatchEvent(new Event("input", { bubbles: true })); })()');
+  check((await evaluate('document.body.innerText')).includes('正式 APP 与公网连接必须使用可信 HTTPS'), 'public HTTP address was not rejected');
+  await evaluate('(() => { const input = document.querySelector("#server-address"); const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; setter.call(input, "http://127.0.0.1:3000"); input.dispatchEvent(new Event("input", { bubbles: true })); })()');
   await click('.connect-manual .mobile-button');
   check((await evaluate('document.body.innerText')).includes('未发起连接请求'), 'preview connection did not stay isolated from the server');
   pass('manual connection expands, validates addresses, and does not claim a server connection');

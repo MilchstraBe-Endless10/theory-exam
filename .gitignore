@@ -61,3 +61,10 @@ frp-token*
 artifacts/
 test-results/
 playwright-report/
+**/.gradle/
+**/local.properties
+**/keystore.properties
+**/*.jks
+**/*.keystore
+**/android/app/build/
+**/android/build/

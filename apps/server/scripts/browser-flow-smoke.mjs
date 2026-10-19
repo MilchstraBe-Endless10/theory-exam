@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -12,7 +12,8 @@ const serverDir = fileURLToPath(new URL('..', import.meta.url));
 const projectDir = resolve(serverDir, '../..');
 const mobileDir = join(projectDir, 'apps', 'mobile');
 const workbookPath = join(projectDir, 'local-input', '四级理论试题.xlsx');
-const screenshotDir = process.env.P4_BROWSER_SCREENSHOT_DIR || process.env.P3_BROWSER_SCREENSHOT_DIR || process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR ? resolve(process.env.P4_BROWSER_SCREENSHOT_DIR || process.env.P3_BROWSER_SCREENSHOT_DIR || process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR) : '';
+const screenshotDirectory = process.env.P5_BROWSER_SCREENSHOT_DIR || process.env.P4_BROWSER_SCREENSHOT_DIR || process.env.P3_BROWSER_SCREENSHOT_DIR || process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR;
+const screenshotDir = screenshotDirectory ? resolve(screenshotDirectory) : '';
 const adminPassword = `P1BrowserAdmin-${randomBytes(16).toString('hex')}!`;
 const userPassword = `P1BrowserUser-${randomBytes(16).toString('hex')}!`;
 const changedUserPassword = `P1BrowserChanged-${randomBytes(16).toString('hex')}!`;
@@ -159,15 +160,20 @@ async function stop(child) {
 try {
   assert.ok(readFileSync(workbookPath).length > 0, 'The local test workbook is missing.');
   const serverPort = await getFreePort();
+  const adminPort = await getFreePort();
   const vitePort = await getFreePort();
   const serverOrigin = `http://127.0.0.1:${serverPort}`;
+  const adminOrigin = `http://127.0.0.1:${adminPort}`;
   const viteOrigin = `http://127.0.0.1:${vitePort}`;
   const databasePath = join(temporaryDirectory, 'browser.test.sqlite');
   const serverEnv = {
     ...process.env,
-    NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(serverPort),
-    THEORY_DATABASE_PATH: databasePath, CORS_ORIGINS: viteOrigin,
+    NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(serverPort), ADMIN_PORT: String(adminPort),
+    THEORY_DATABASE_PATH: databasePath, CORS_ORIGINS: `${viteOrigin},${adminOrigin}`,
   };
+  execFileSync(process.execPath, ['--import', 'tsx', 'src/cli.ts', 'migrate'], {
+    cwd: serverDir, env: serverEnv, stdio: 'pipe',
+  });
   const serverRun = start(process.execPath, ['--import', 'tsx', 'src/server.ts'], serverDir, serverEnv);
   await waitFor(async () => (await fetch(`${serverOrigin}/api/health`).catch(() => null))?.ok, 'Fastify test server did not start.');
 
@@ -189,10 +195,13 @@ try {
   socket.addEventListener('message', event => {
     const message = JSON.parse(event.data);
     if (message.method === 'Runtime.exceptionThrown') consoleErrors.push(message.params.exceptionDetails.text);
-    if (message.method === 'Log.entryAdded' && message.params.entry.level === 'error') consoleErrors.push(message.params.entry.text);
+    if (message.method === 'Log.entryAdded' && message.params.entry.level === 'error'
+      && !message.params.entry.text.includes('status of 401 (Unauthorized)')) consoleErrors.push(message.params.entry.text);
     if (message.method === 'Network.responseReceived' && message.params.response.status >= 400) {
-      responseFailures.push(`${message.params.response.status} ${message.params.response.url}`);
-      if (message.params.response.status >= 500) consoleErrors.push(`${message.params.response.status} ${message.params.response.url}`);
+      const response = message.params.response;
+      const expectedUnauthenticatedProbe = response.status === 401 && new URL(response.url).pathname === '/api/auth/me';
+      if (!expectedUnauthenticatedProbe) responseFailures.push(`${response.status} ${response.url}`);
+      if (response.status >= 500) consoleErrors.push(`${response.status} ${response.url}`);
     }
     if (!message.id) return;
     const request = pending.get(message.id);
@@ -221,7 +230,7 @@ try {
   await capture('1536x1024-desktop-home-empty.png');
   console.log('PASS desktop dashboard shows a truthful empty state before a bank is imported');
 
-  await navigate(`${viteOrigin}/admin`);
+  await navigate(`${adminOrigin}/admin`);
   await waitFor(async () => (await bodyText()).includes('初始化本机管理员'), 'Admin bootstrap form did not appear.');
   await fill('.admin-auth-card input[autocomplete="username"]', 'p1-browser-admin');
   await fill('.admin-auth-card input[type="password"]', adminPassword);
@@ -274,8 +283,8 @@ try {
     await waitFor(async () => evaluate('Boolean(document.querySelector(".password-gate-card") || document.querySelector(".login-content .form-error") || location.pathname === "/")'), 'Login did not resolve.', 8000);
     loginResolved = true;
   } catch { /* include safe UI/session state below */ }
-  const firstLoginState = await evaluate('({ gate: Boolean(document.querySelector(".password-gate-card")), error: document.querySelector(".login-content .form-error")?.innerText ?? "", route: location.pathname, tokenStored: Boolean(localStorage.getItem("theory-exam.session-token") || sessionStorage.getItem("theory-exam.session-token.temporary")), loginButtonDisabled: document.querySelector(".login-content button[type=submit]")?.disabled ?? null, body: document.body.innerText.slice(0, 260) })');
-  assert.ok(loginResolved && firstLoginState.gate, `First-login password change gate did not appear: ${JSON.stringify(firstLoginState)}`);
+  const firstLoginState = await evaluate('({ gate: Boolean(document.querySelector(".password-gate-card")), error: document.querySelector(".login-content .form-error")?.innerText ?? "", route: location.pathname, tokenStored: Boolean(localStorage.getItem("theory-exam.session-token") || sessionStorage.getItem("theory-exam.session-token.temporary")), cookieVisibleToJavaScript: document.cookie.includes("theory_session"), loginButtonDisabled: document.querySelector(".login-content button[type=submit]")?.disabled ?? null, body: document.body.innerText.slice(0, 260) })');
+  assert.ok(loginResolved && firstLoginState.gate && !firstLoginState.tokenStored && !firstLoginState.cookieVisibleToJavaScript, `First-login gate or HttpOnly cookie session failed: ${JSON.stringify(firstLoginState)}`);
   await fill('.password-gate-card input[autocomplete="current-password"]', userPassword);
   await fill('.password-gate-card input[autocomplete="new-password"]', changedUserPassword);
   await fill('.password-gate-card label:nth-of-type(3) input', changedUserPassword);
@@ -287,8 +296,7 @@ try {
     const safeState = await evaluate(`(async () => {
       let banks = { status: 0, items: [] };
       try {
-        const token = localStorage.getItem('theory-exam.session-token') || sessionStorage.getItem('theory-exam.session-token.temporary') || '';
-        const response = await fetch(${JSON.stringify(`${serverOrigin}/api/banks`)}, { headers: { Authorization: 'Bearer ' + token } });
+        const response = await fetch(${JSON.stringify(`${serverOrigin}/api/banks`)}, { credentials: 'include' });
         const payload = await response.json();
         banks = { status: response.status, items: Array.isArray(payload.items) ? payload.items.map(bank => ({ name: bank.name, questionCount: bank.activeVersion?.questionCount ?? null })) : [], errorCode: payload.error?.code || '' };
       } catch (reason) { banks.errorCode = reason instanceof Error ? reason.name : 'fetch-error'; }
@@ -305,6 +313,25 @@ try {
   console.log('PASS browser server health check and ordinary user login');
 
   testDatabase = new DatabaseSync(databasePath);
+  const browserSession = testDatabase.prepare(`SELECT s.token_hash AS tokenHash, s.remember
+    FROM sessions s JOIN users u ON u.id = s.user_id WHERE u.username = ?`).get('p1-browser-learner');
+  assert.ok(browserSession, 'Ordinary browser session was not persisted.');
+  await evaluate(`(() => {
+    window.__p5RenewAck = false;
+    window.addEventListener('theory-exam:session-change', event => {
+      if (event.detail?.user?.username === 'p1-browser-learner') window.__p5RenewAck = true;
+    }, { once: true });
+    return true;
+  })()`);
+  const nearExpiry = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  testDatabase.prepare('UPDATE sessions SET expires_at = ? WHERE token_hash = ?').run(nearExpiry, browserSession.tokenHash);
+  await evaluate('document.dispatchEvent(new Event("visibilitychange"))');
+  await waitFor(async () => Date.parse(testDatabase.prepare(`SELECT expires_at AS expiresAt FROM sessions s
+    JOIN users u ON u.id = s.user_id WHERE u.username = ?`).get('p1-browser-learner').expiresAt) > Date.parse(nearExpiry)
+    && await evaluate('window.__p5RenewAck === true')
+    && (await bodyText()).includes('p1-browser-learner'), 'Browser visibility recovery did not renew and retain the authenticated session.');
+  console.log('PASS browser visibility recovery renews the existing server session');
+
   await navigate(`${viteOrigin}/practice`);
   await waitFor(async () => (await evaluate('document.querySelectorAll("button.practice-choice").length')) === 8, 'Daily practice modes did not load.');
   await capture('390x844-practice-selection.png');
@@ -315,10 +342,19 @@ try {
   await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await navigate(`${viteOrigin}/practice`);
   await waitFor(async () => (await evaluate('document.querySelectorAll("button.practice-choice").length')) === 8, 'Mobile practice modes did not reload.');
+  await waitFor(async () => (await bodyText()).includes('当前题库：四级理论题库'), 'Practice selection did not finish loading the real bank.');
   await clickContaining('button.practice-choice', '单选题练习');
   try {
     await waitFor(async () => await evaluate('location.pathname === "/practice/answer" && Boolean(document.querySelector(".practice-live-screen[data-question-id] .answer-option"))'), 'A real server-backed practice question did not load.');
   } catch (error) {
+    const safeAuthState = await evaluate(`(async () => {
+      try {
+        const response = await fetch(${JSON.stringify(`${serverOrigin}/api/auth/me`)}, { credentials: 'include' });
+        const payload = await response.json();
+        return { status: response.status, identity: payload.username || '', errorCode: payload.error?.code || '', serverAddressSaved: Boolean(localStorage.getItem('theory-exam.server-address')) };
+      } catch (reason) { return { status: 0, identity: '', errorCode: reason instanceof Error ? reason.name : 'fetch-error', serverAddressSaved: Boolean(localStorage.getItem('theory-exam.server-address')) }; }
+    })()`);
+    console.error('Safe auth state after visibility renewal:', JSON.stringify(safeAuthState));
     const state = await evaluate('({ route: location.pathname, body: document.body.innerText.slice(0, 400), practiceScreen: Boolean(document.querySelector(".practice-live-screen")), optionCount: document.querySelectorAll(".mobile-route .answer-option").length })');
     console.error('Safe practice-load diagnostics:', JSON.stringify(state));
     throw error;
@@ -503,8 +539,7 @@ try {
     FROM exam_question_snapshots s WHERE s.exam_session_id = ? AND s.position = 1`).get(examId);
   assert.ok(firstSnapshot, 'The browser-started exam did not persist its first question snapshot.');
   const safePayload = await evaluate(`(async () => {
-    const token = localStorage.getItem('theory-exam.session-token') || sessionStorage.getItem('theory-exam.session-token.temporary') || '';
-    const response = await fetch('/api/exams/${examId}', { headers: { Authorization: 'Bearer ' + token } });
+    const response = await fetch(${JSON.stringify(`${serverOrigin}/api/exams/${examId}`)}, { credentials: 'include' });
     return JSON.stringify({ status: response.status, body: await response.json() });
   })()`);
   assert.equal(JSON.parse(safePayload).status, 200);
@@ -640,7 +675,7 @@ try {
   console.log('PASS simulated network failure stays unsubmitted; practice and exam previews leave all formal SQLite rows unchanged');
 
   assert.deepEqual(consoleErrors, [], `Browser console/network errors: ${consoleErrors.join(' | ')}; HTTP failures: ${responseFailures.join(' | ')}`);
-  console.log('P3 browser smoke passed.');
+  console.log('P5 browser flow passed (P1–P5 regression).');
 } catch (error) {
   failures.push(error instanceof Error ? error.message : String(error));
   for (const failure of failures) console.error(`FAIL ${failure}`);

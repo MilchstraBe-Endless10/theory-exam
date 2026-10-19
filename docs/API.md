@@ -1,8 +1,8 @@
-# HTTP API (P1–P4)
+# HTTP API (P1–P5-A)
 
 API base is the configured local service address. The server currently defaults to `127.0.0.1:3000`; set `HOST`, `PORT`, and `CORS_ORIGINS` for the actual local deployment. Do not add public reverse-proxy or frp settings here.
 
-Authenticated requests use `Authorization: Bearer <session-token>`. Session tokens are random; SQLite stores only their SHA-256 digest. Errors use `{ "error": { "code": "...", "message": "...", "details?": {} } }`.
+Android Capacitor requests use `Authorization: Bearer <session-token>` from Android Keystore-backed secure storage; SQLite stores only the token's SHA-256 digest. Browser sessions use an `HttpOnly; SameSite=Strict` cookie and do not return the session token in JSON. Production cookies require `Secure`, and `NODE_ENV=production` refuses `COOKIE_SECURE=false`. Browser state-changing requests must include the CSRF token returned by login/password change or `GET /api/auth/csrf` in `X-CSRF-Token`; the server also checks the configured `Origin`. Errors use `{ "error": { "code": "...", "message": "...", "details?": {} } }`.
 
 ## Health and user session
 
@@ -12,17 +12,23 @@ Authenticated requests use `Authorization: Bearer <session-token>`. Session toke
 | `POST` | `/api/admin/bootstrap` | Loopback only; one time | Initialize the first administrator and create its session. |
 | `POST` | `/api/auth/login` | Public, rate limited | Login with administrator-created username and password. |
 | `GET` | `/api/auth/me` | Session | Return the authenticated user. |
+| `POST` | `/api/auth/renew` | Session; browser cookie requests require CSRF | Extend the current session using its original 12-hour or 30-day remember policy. |
 | `POST` | `/api/auth/logout` | Session | Revoke the current session. |
 | `POST` | `/api/auth/password` | Session | Change the current password and rotate the current session. |
+| `GET` | `/api/auth/csrf` | Session cookie | Return the current session's CSRF token for browser requests. |
 | `GET` | `/api/banks` | Session | List enabled banks, active version counts, and that version's exam rules. |
 
 `POST /api/auth/login` accepts `{ "username", "password", "remember?" }`. Login errors intentionally do not distinguish an unknown username, wrong password, or disabled account. Responses include `user.mustChangePassword` and `user.isTestAccount`; they never contain the password or encoded password hash. Login attempts are rate limited by the server-observed client address and normalized username.
+
+`POST /api/auth/renew` accepts `{}` and slides the current session expiry by its original lifetime: 12 hours for a non-remembered session or 30 days for a remembered session. V6 stores that policy and backfills existing sessions from their original expiry interval. The bearer token remains unchanged; browser cookies receive an updated `Max-Age`. Disabled, expired, revoked, or first-login password-change sessions cannot renew. The native client renews after app/network recovery; the browser renews when a background tab becomes visible.
+
+The web client never stores a session token in `localStorage` or `sessionStorage`; older token keys are deleted at startup. Browser state-changing requests require both a configured `Origin` and the session CSRF token. Android is recognized by its Capacitor origin (`https://localhost` or `capacitor://localhost`) and receives a bearer token for native secure storage. Requests without a browser `Origin` retain the bearer response for local CLI/test compatibility. A browser must not spoof native origins; CORS is not the authorization boundary. Production mobile server connections require HTTPS. A developer build accepts HTTP only for loopback addresses.
 
 New accounts and administrator password resets set `mustChangePassword=true`. Until the user changes the password, authenticated requests other than `GET /api/auth/me`, `POST /api/auth/password`, and `POST /api/auth/logout` return `403 PASSWORD_CHANGE_REQUIRED`. Password change requires the current password and a new password of at least 12 characters. A successful change atomically updates the Argon2id hash, clears the forced-change state, revokes all prior sessions, and issues a replacement session. Existing users receive `mustChangePassword=false` by default during V3 migration.
 
 ## Local management
 
-The `/admin` page and management APIs enforce loopback access on the server socket. Forwarded IP headers and browser CORS are not used as the access-control boundary. Management APIs also require an administrator session, except for the one-time bootstrap and status endpoint.
+The process runs two separate listeners: the learning listener (default `127.0.0.1:3000`) does not register `/admin`, `/api/admin/*`, or the bootstrap route; the management listener (default `127.0.0.1:3001`) is loopback-only and its management APIs also enforce a loopback socket peer. Forwarded IP headers and browser CORS are not used as the access-control boundary. Do not map port 3001 through frp: a local frpc connection would itself look like loopback to the management listener. Management APIs also require an administrator session, except for the one-time bootstrap and status endpoint.
 
 | Method | Path | Access | Purpose |
 | --- | --- | --- | --- |
@@ -129,6 +135,15 @@ Every endpoint below requires an enabled, authenticated user session. The server
 | `POST` | `/api/reviews/:id/submit` | Submit `{ "answer": ["A"] }`; the server grades, records the answer, and updates mastery in one transaction. |
 | `GET` | `/api/reviews/:id/result?position=...` | Return feedback only for an already submitted question. |
 | `GET` | `/api/reviews/:id/results` | Return the round summary and all submitted feedback for its history detail. Unanswered positions have no answer key in the response. |
+
+## App updates
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/updates/latest` | Enabled user session | Return the cached release manifest after checking the APK SHA-256. |
+| `GET` | `/api/updates/apk` | Enabled user session | Stream the fixed `theory-exam.apk` cache file after verifying the configured digest. |
+
+The manifest contains `applicationId`, `version`, `versionCode`, `signerSha256`, `apkSha256`, `releaseNotes`, and the fixed `apkFilename`. The server accepts no path or proxy target from a client. `npm --prefix apps/server run updates:sync` reads a server-only `GITHUB_TOKEN` from the process environment and downloads only the exact `theory-exam.apk` and `theory-exam-update.json` assets from the configured private repository release. The token is never sent to the APP or logged. The mobile APP checks application ID, increasing version code, and downloaded SHA-256; Android's system package installer enforces installed-package signature continuity and always asks the user to confirm installation. The client refuses to open the installer while an exam is active.
 
 `POST /api/reviews` accepts `questionType` as `all`, `single`, `multiple`, or `judgement`; `strategy` as `random` or `weak`; `quantity` as `10`, `20`, or `all`; and `masteryStatus` as `pending` or `mastered`. `pending` selects both `review` and `reinforcing`. The requested quantity is capped at the actual matching count; the response reports `availableCount`, actual `questionCount`, and `round.reducedToAvailable` so the UI can explain a short set. No matching questions returns `409 NO_REVIEW_QUESTIONS`. Only one unfinished round per user and bank can be in progress at a time; a conflict returns `409 REVIEW_ROUND_IN_PROGRESS` with the existing round ID.
 

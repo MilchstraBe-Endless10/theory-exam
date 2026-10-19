@@ -1,5 +1,6 @@
+import { timingSafeEqual } from 'node:crypto';
 import type { FastifyReply, FastifyRequest, preHandlerHookHandler } from 'fastify';
-import { createSessionToken, digestSessionToken, sessionExpiry } from './security.js';
+import { createCsrfToken, createSessionToken, digestSessionToken, sessionExpiry } from './security.js';
 import type { AuthenticatedUser, UserRecord } from './types.js';
 
 export function isLoopbackAddress(address: string | undefined): boolean {
@@ -22,17 +23,18 @@ export const requireLocal: preHandlerHookHandler = async (request, reply) => {
 };
 
 export const requireSession: preHandlerHookHandler = async (request, reply) => {
-  const authorization = request.headers.authorization;
-  const token = typeof authorization === 'string' && authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+  const credential = sessionCredentialFromRequest(request);
+  const token = credential.token;
+  const cookieToken = credential.fromCookie ? token : '';
   if (!token || token.length > 256) return denied(reply, 401, 'AUTH_REQUIRED', '请先登录。');
 
   const tokenHash = digestSessionToken(token);
   const row = request.server.db.prepare(`
     SELECT u.id, u.username, u.role, u.disabled, u.created_at, u.updated_at,
-      u.must_change_password, u.is_test_account, s.expires_at
+      u.must_change_password, u.is_test_account, s.expires_at, s.csrf_token
     FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.token_hash = ?
-  `).get(tokenHash) as (Omit<UserRecord, 'password_hash'> & { expires_at: string }) | undefined;
+  `).get(tokenHash) as (Omit<UserRecord, 'password_hash'> & { expires_at: string; csrf_token: string }) | undefined;
   if (!row) return denied(reply, 401, 'SESSION_INVALID', '登录状态已失效，请重新登录。');
   if (Date.parse(row.expires_at) <= Date.now() || row.disabled) {
     request.server.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash);
@@ -43,8 +45,18 @@ export const requireSession: preHandlerHookHandler = async (request, reply) => {
     return denied(reply, 403, 'PASSWORD_CHANGE_REQUIRED', '首次登录请先修改密码。');
   }
 
-  const { expires_at: sessionExpiresAt, ...user } = row;
-  request.authUser = { ...user, sessionTokenHash: tokenHash, sessionExpiresAt };
+  if (cookieToken && !['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
+    const origin = request.headers.origin;
+    const csrf = request.headers['x-csrf-token'];
+    const expected = Buffer.from(row.csrf_token);
+    const actual = Buffer.from(typeof csrf === 'string' ? csrf : '');
+    if (!origin || !request.server.config.corsOrigins.has(origin) || expected.length === 0 || expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
+      return denied(reply, 403, 'CSRF_INVALID', '请求安全校验失败，请刷新页面后重试。');
+    }
+  }
+
+  const { expires_at: sessionExpiresAt, csrf_token: sessionCsrfToken, ...user } = row;
+  request.authUser = { ...user, sessionTokenHash: tokenHash, sessionExpiresAt, sessionCsrfToken };
 };
 
 export const requireAdmin: preHandlerHookHandler = async (request, reply) => {
@@ -55,8 +67,27 @@ export const requireAdmin: preHandlerHookHandler = async (request, reply) => {
 export function createSession(db: FastifyRequest['server']['db'], userId: string, remember: boolean, token = '') {
   const sessionToken = token || createSessionToken();
   const tokenHash = digestSessionToken(sessionToken);
+  const csrfToken = createCsrfToken();
   const expiresAt = sessionExpiry(remember);
-  db.prepare('INSERT INTO sessions(token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
-    .run(tokenHash, userId, new Date().toISOString(), expiresAt);
-  return { token: sessionToken, expiresAt, tokenHash };
+  db.prepare('INSERT INTO sessions(token_hash, user_id, created_at, expires_at, csrf_token, remember) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(tokenHash, userId, new Date().toISOString(), expiresAt, csrfToken, Number(remember));
+  return { token: sessionToken, csrfToken, expiresAt, tokenHash };
+}
+
+export function sessionCredentialFromRequest(request: FastifyRequest): { token: string; fromCookie: boolean } {
+  const authorization = request.headers.authorization;
+  const bearerToken = typeof authorization === 'string' && authorization.startsWith('Bearer ')
+    ? authorization.slice(7).trim()
+    : '';
+  const cookieToken = bearerToken ? '' : readCookie(request.headers.cookie, 'theory_session');
+  return { token: bearerToken || cookieToken, fromCookie: Boolean(cookieToken) };
+}
+
+function readCookie(header: string | undefined, name: string): string {
+  for (const part of (header ?? '').split(';')) {
+    const [key, ...value] = part.trim().split('=');
+    if (key !== name) continue;
+    try { return decodeURIComponent(value.join('=')); } catch { return ''; }
+  }
+  return '';
 }

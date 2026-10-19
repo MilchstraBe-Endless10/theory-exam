@@ -1,9 +1,9 @@
 # 中期记忆（阶段 / 里程碑）
 
-更新时间：2026-10-19（P4 错题复习验收完成）
+更新时间：2026-10-19（P5-A 隔离验收进行中；Android 构建受环境阻塞）
 
 ## 当前阶段
-**P0、P0-M、P1、P2、P2-R、P3、P4 均已完成验收并同步至私有 GitHub。P4 实现提交 `35466874d28cb7f018df72bd46e4586c5f93e7f3` 已验证本地与远端一致；Issue #5/#6 已关闭，Issue #3 保持打开。**
+**P0、P0-M、P1、P2、P2-R、P3、P4 均已完成验收并同步至私有 GitHub。P5-A 的服务端/浏览器/备份与安全代码已隔离验证，但当前机器无 JDK、Android SDK、Gradle 或 adb，APK 构建和安装验收未完成；不得标记 P5-A 完成，也未开始 P5-B。正式 SQLite 保持 V4，Issue #3/#7 继续打开。**
 
 ## Git 开发流程（长期约束）
 - 正式仓库：`https://github.com/MilchstraBe-Endless10/theory-exam`，保持 Private。每次开发开始前检查工作区/分支/远端并 fetch；阶段验证通过后默认普通提交、推送并核验远端 SHA。
@@ -19,7 +19,8 @@
 - [x] P2-R 四账号、首次改密与密码安全（本机真实库 V3 迁移和四账号登录验收完成，2026-10-19）
 - [x] P3 模拟考试、断线恢复、成绩历史（真实题库隔离导入、浏览器验收与 GitHub 同步完成，2026-10-19）
 - [x] P4 错题复习和学习分析（V5 轮次、三态掌握、只读 db:status 修复、浏览器验收完成）
-- [ ] P5 Android APP、frp、备份恢复
+- [ ] P5-A Android APP 与网络安全、备份和更新（代码及隔离验收通过；APK/真机待有 Android 工具链的主机验证）
+- [ ] P5-B 正式 systemd、可信 HTTPS、frp 与 V4→V6 数据库部署（需用户确认）
 - [ ] P6 系统回归、发行准备与 GitHub 发布
 
 ## 本阶段验收
@@ -117,3 +118,13 @@
 - Chromium 使用隔离 SQLite 及本机真实 Excel 完成实际流程，导入 **1,283 题（单选 845、多选 38、判断 400）**；验证普通练习错答入错题、单选/薄弱优先/10题组合、实际题量不足提示、退出后恢复、不同轮次连续正确后成为已掌握、历史结果及桌面错题本。390×844、360×800、1536×1024 截图均检查，视觉与交互问题已修正。截图目录：`/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/图片与设计/理论考试练习系统/P4-错题复习验收-20261019-03/`。
 - 正式数据库状态未改变：V4、四名普通账号、无管理员、无正式题库。本阶段不初始化管理员、不重置账号、不导入正式题库。正式启用仍需本机管理员操作及题库导入。
 - API 文档、架构、ADR、路线图及本记忆已更新；`memory/LONG_TERM.md` 未改（长期业务规则不变）。P4 实现提交 `35466874d28cb7f018df72bd46e4586c5f93e7f3`（[GitHub commit](https://github.com/MilchstraBe-Endless10/theory-exam/commit/35466874d28cb7f018df72bd46e4586c5f93e7f3)）已普通推送；推送后 `HEAD`、`origin/main`、`git ls-remote` 与 GitHub API commit 均一致。仓库仍为 Private。Issue #6（只读状态修复）与 Issue #5（P4）均在全部验证通过后以 completed 关闭。
+
+## P5-A 隔离开发记录（2026-10-19；尚未完成阶段验收）
+- 从 `b6cdb05b6b737218b0b82d9fa8f1fd7a94230c6c` 开始，初始 `main` 与 `origin/main` 同步且工作区干净；已读取 Issue #7、#1、#3。当前仅在隔离环境开发，未启动 P5-B、未改真实 frp/systemd/证书配置、未迁移正式数据库或发布 Release。
+- Fastify 学习与管理流量拆为独立 listener：学习入口不挂载管理页面、管理 API 或首次管理员初始化；管理入口仍 loopback。隔离测试模拟 loopback 转发到学习入口，管理路由和页面均不可达。真实 frpc/frps 与两个系统服务当前未运行；本机遗留 Fastify 3000 健康检查仍报告 V4，3001 无服务。
+- Web 会话使用 HttpOnly/SameSite Strict Cookie、CSRF token、Origin 检查和生产 Secure 强制；浏览器旧 Bearer local/sessionStorage key 启动时清理。Android 使用 Capacitor secure storage；V6 新增 CSRF 与 remember 策略并按旧期限回填，`POST /api/auth/renew` 按 12 小时/30 天策略滑动续期。禁用、过期、撤销与首登待改密会话拒绝续期。正式数据库仍为 V4，`db:status` 只读报告待迁移到 V6；未执行迁移。
+- Capacitor Android 工程已生成，开发身份为 `com.theoryexam.mobile.dev` / `1.0.0-dev.1`；扫码、网络、状态栏、返回/恢复和 APK 安装器流程已接线，明文流量默认关闭。私有 Release 同步只接受固定 APK/manifest，服务端缓存按 SHA-256 校验，更新下载要求用户会话；进行中考试时不打开系统安装器。未读取 Token、没有发布 Release、没有测试 APK或正式签名。
+- SQLite 备份使用 `VACUUM INTO`，校验完整性/外键，日备份保留七份；恢复要求先备份当前库、确认且声明服务已停止。systemd service/timer 模板已加入仓库，未安装或启动。
+- 环境：Omarchy 4.0.4、Node v26.8.2、npm 11.19.1；无 Java/JDK、Android SDK、Gradle、Android Studio、adb、模拟器。`npm run android:debug` 中 web build 与 `cap sync android` 成功，Gradle 在启动前以 `JAVA_HOME is not set` 失败；无 APK 构建或安装证据，因此 P5-A 不打勾。
+- 验证：server/mobile typecheck、production build 通过；服务端 **56/56** 测试、mobile UI smoke **14/14** 通过；`npm audit` 两个工程均 0 vulnerabilities；`systemd-analyze verify` 通过。最终 Chromium P5 全流程通过：本机管理员初始化、创建普通账号、真实 Excel 临时导入 **1,283 题（845/38/400）**、首登改密、Cookie/CSRF/续期、真实练习和错题复习、模拟考试、断网重试/恢复、Preview 隔离、桌面及两种手机视口。截图目录：`/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/图片与设计/理论考试练习系统/P5-A/final-5/`。
+- 运行库只读观察：`127.0.0.1:3000/api/health` 返回 `migrationVersion: 4`；`db:status` 返回 `migration_pending`（V4→V6，exit 1 是待迁移状态信号），未更改 DB。`127.0.0.1:3001` 无 listener。`theory-exam.service`、`frpc.service`、`frps.service` inactive，frpc/frps 进程不存在。仓库仍为 Private。P5-A 等待具备 Android 工具链的构建/安装验证；P5-B 还需用户确认实际 systemd、V4→V6、可信 HTTPS 与 frp 变更方案。
