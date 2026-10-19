@@ -42,7 +42,7 @@
 - 视觉复核：手机设置、答题、答题卡、结果及桌面答题/复盘布局正常；360×800 答题卡可滚动访问 180 题。结果为长页面，可滚动查看完整复盘。未观察到横向溢出或桌面首页回归。
 - 正式本机库最初在 P3 开发前为 V3、4 个普通账号、无管理员、无题库。检查时运行 npm run db:status，而该 CLI 的 openDatabase() 会自动应用迁移，因此 V4 已被应用到正式库；迁移为增量 schema，未删除/重置账号或导入题库。随后只读核实：migration 4、用户 4、管理员 0、题库 0、进行中考试 0。旧服务优雅停止，当前 127.0.0.1:3000 运行 P3 构建；健康检查为 200/V4，未认证考试 API 返回 401。正式库没有初始化管理员，也没有导入真实题库。
 - 四级规则保持 120 单选×0.5、20 多选×1、40 判断×0.5，共 180 题、100 分、90 分钟。长期规则未变化，memory/LONG_TERM.md 未修改。
-- P3 GitHub 同步记录：验收提交和同步 SHA 在本节末次更新后补录；仓库保持 Private，使用普通 push 并核对远端 main SHA，无强推、Release 或敏感文件。
+- P3 实现提交 `df6e68d21cb867787676a1474b04387c2b77cd99`（[GitHub commit](https://github.com/MilchstraBe-Endless10/theory-exam/commit/df6e68d21cb867787676a1474b04387c2b77cd99)）；随后修正 Dashboard hooks import 的提交为 `e6fdc9de37f153e255e46213fd4f30e49ea6ef12`（[GitHub commit](https://github.com/MilchstraBe-Endless10/theory-exam/commit/e6fdc9de37f153e255e46213fd4f30e49ea6ef12)）。普通 push 后本地 HEAD、origin/main 和 git ls-remote 均核对为 e6fdc9de37f153e255e46213fd4f30e49ea6ef12；仓库保持 Private，无强推、Release 或敏感文件。
 
 ## 本阶段遇到的新技术决定/风险
 - 前端放在 `apps/mobile/`，采用 React + TypeScript + Vite + React Router，为后续 Capacitor Android 客户端保留同一入口。

@@ -4,7 +4,7 @@
 
 - 日期：2026-10-19
 - 阶段：P3 模拟考试业务已本地验收、已同步至私有 GitHub；暂停等待 P4 授权。
-- Git 基线：开始时 main 与 origin/main 同步于 05a2225af20f70c6ac9eacec6d04f9f90f1fed66。P3 提交与 GitHub URL/SHA 在本轮同步后补录；普通 push 后核验远端 main 与本地一致。
+- Git 基线：开始时 main 与 origin/main 同步于 05a2225af20f70c6ac9eacec6d04f9f90f1fed66。P3 实现提交 df6e68d21cb867787676a1474b04387c2b77cd99（https://github.com/MilchstraBe-Endless10/theory-exam/commit/df6e68d21cb867787676a1474b04387c2b77cd99）；Dashboard import 修复提交 e6fdc9de37f153e255e46213fd4f30e49ea6ef12（https://github.com/MilchstraBe-Endless10/theory-exam/commit/e6fdc9de37f153e255e46213fd4f30e49ea6ef12）。普通 push 后 HEAD、origin/main、git ls-remote 一致于 e6fdc9de37f153e255e46213fd4f30e49ea6ef12。
 - 服务端：新增 apps/server/src/routes/exam-routes.ts、apps/server/src/services/exam-service.ts 和 V4 迁移。按当前题库版本/规则事务组 180 题快照、每题分值与服务器起止时间；支持每账号单场考试、答题版本与幂等 requestId、断线恢复、超时自动结算、交卷判分、历史复盘、账户隔离和错题一次性更新。考试未结算前不返回正确答案。
 - 客户端：新增 apps/mobile/src/services/exams.ts 与 ExamPages.tsx；手机/桌面设置、答题、服务器倒计时、180 题答题卡、待检查标记、同步/冲突状态、交卷二次确认、成绩复盘和历史记录均接入 API。首页最近成绩读取真实考试历史。开发预览与业务 API 隔离。
 - 本地 Excel 在隔离测试库真实导入 1,283 道（单选 845、多选 38、判断 400）。服务端测试全套 30 项通过；客户端 typecheck/build 通过，UI smoke 13 项通过；Chromium 真实浏览器全流程通过，覆盖登录、组卷、离线重试、180 题跳题、刷新/登出重登恢复、交卷/评分、历史、桌面回归与 Preview 不写库。浏览器 smoke 曾暴露异步同步断言竞态，现已改为等待 SQLite 确认并重跑通过。
