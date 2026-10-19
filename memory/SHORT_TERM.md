@@ -23,3 +23,4 @@
 - TLS 研究及 ADR-025：普通浏览器不会继承 Android Network Security Configuration 中的私有信任锚；不可忽略证书错误。当前无自有域名，免费可控 DNS 子域名 + DNS-01 公信证书 + MeFrp TCP TLS 透传是候选但未选择/验证服务商；Let’s Encrypt IP cert 约 160 小时，且需 IP 控制与标准 80/443 ACME 验证。当前 API 3000 仍旧 P4/V4 HTTP，隧道保持离线。
 - 未操作正式 SQLite（仍 V4、4 普通用户）、管理员、题库或密码；没有启隧道、改 systemd/公网/证书；8080 fixture 停止，3000 旧进程未动。已更新 API/架构/ADR-024/025/路线图/中期记忆；未改长期规则。提交与远端 SHA 待本轮结束记录。
 - 后续阻塞不变：JDK/Android SDK/adb/设备缺失，APK/真机仍未验收。P5-B 需要具体 TLS/DNS、正式服务切换、V4→V6 迁移和隧道更改/回滚计划并另行确认。
+- P5-A 双入口实现提交：`fb00f720a5d9a02927c834579f0b797570d5c159`（<https://github.com/MilchstraBe-Endless10/theory-exam/commit/fb00f720a5d9a02927c834579f0b797570d5c159>）。即将创建记忆同步提交并普通推送至当前功能分支；`main` 保持不变。
