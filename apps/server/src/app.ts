@@ -11,6 +11,7 @@ import { HttpError } from './errors.js';
 import { hashPassword } from './security.js';
 import { registerAdminRoutes } from './routes/admin-routes.js';
 import { registerAuthRoutes } from './routes/auth-routes.js';
+import { registerPracticeRoutes } from './routes/practice-routes.js';
 
 export interface BuildAppOptions {
   config?: ServerConfig;
@@ -113,5 +114,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const dummyPasswordHash = await hashPassword('invalid-placeholder-password-never-used-for-a-user');
   await registerAuthRoutes(app, dummyPasswordHash);
   await registerAdminRoutes(app);
+  await registerPracticeRoutes(app);
   return app;
 }

@@ -10,6 +10,11 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { useBanks } from '../services/banks';
 import { ApiError, apiRequest, clearSession, persistentSession, previewMode, savedServerAddress, saveServerAddress, saveSession, type ApiSession } from '../services/api';
+import {
+  createPracticeSession, exitPracticeSession, getActivePracticeSession, getFavorites, getPracticeQuestion,
+  getPracticeResult, getPracticeSession, movePracticePosition, resumePracticeSession, setQuestionFavorite,
+  submitPracticeAnswer, type PracticeMode, type PracticeProgress,
+} from '../services/practice';
 
 const preview = import.meta.env.DEV && new URLSearchParams(window.location.search).get('preview') === '1';
 const href = (path: string) => preview ? `${path}${path.includes('?') ? '&' : '?'}preview=1` : path;
@@ -22,8 +27,8 @@ function StatusBar() {
   return <div className="mobile-statusbar" aria-hidden="true"><span>9:41</span><span className="status-icons"><IconWifi size={15} /><span className="signal-bars"><i /><i /><i /><i /></span><span className="battery"><i /></span></span></div>;
 }
 
-function Screen({ children, immersive = false, className = '' }: { children: ReactNode; immersive?: boolean; className?: string }) {
-  return <main className={`mobile-screen${immersive ? ' is-immersive' : ''} ${className}`}><StatusBar />{children}</main>;
+function Screen({ children, immersive = false, className = '', dataQuestionId }: { children: ReactNode; immersive?: boolean; className?: string; dataQuestionId?: string }) {
+  return <main className={`mobile-screen${immersive ? ' is-immersive' : ''} ${className}`} data-question-id={dataQuestionId}><StatusBar />{children}</main>;
 }
 
 function Header({ title, back = '/', right }: { title?: string; back?: string; right?: ReactNode }) {
@@ -50,11 +55,13 @@ function MobileButton({ children, to, onClick, secondary = false, disabled = fal
   return to ? <Link className={className} to={to}>{children}</Link> : <button className={className} type={type} onClick={onClick} disabled={disabled}>{children}</button>;
 }
 
-function MobileHomePage() {
+function MobileHomePage({ progress, progressLoading, progressError }: { progress: PracticeProgress | null; progressLoading: boolean; progressError: string }) {
   const notice = useNotice();
   const { user } = useAuth();
   const { activeBank: bank, loading, error } = useBanks();
-  const stat = (value: string) => preview ? value : '—';
+  const touched = preview ? '426' : progress ? String(progress.touchedCount) : progressLoading ? '…' : '—';
+  const accuracy = preview ? '82.6%' : progress?.accuracyRate == null ? '—' : `${progress.accuracyRate}%`;
+  const mistakes = preview ? '38' : progress ? String(progress.pendingMistakeCount) : progressLoading ? '…' : '—';
   const quick = [
     { title: '日常练习', icon: IconPencil, to: '/practice', tone: 'green' },
     { title: '模拟考试', icon: IconFileText, to: '/exams', tone: 'blue' },
@@ -68,16 +75,28 @@ function MobileHomePage() {
     <div className="home-greeting"><h1>{preview ? '你好，学习用户' : user ? `你好，${user.username}` : '你好，欢迎学习'}</h1><p>{preview ? '从今天的进步开始。' : bank ? `${bank.name} · 学习记录由本地服务端保存` : error || (loading ? '正在读取已启用题库…' : user ? '本机服务端暂无已启用题库' : '连接并登录本地服务后读取题库')}</p></div>
     <PreviewBadge />
     <section className="mobile-stat-grid" aria-label="学习概况">
-      <article className="mobile-stat-card tone-green"><IconChartBar size={19} /><strong>{stat('426')}</strong><span>{preview ? '已学习' : '已学习题目'}</span></article>
-      <article className="mobile-stat-card tone-blue"><IconChartBar size={19} /><strong>{stat('82.6%')}</strong><span>正确率</span></article>
-      <article className="mobile-stat-card tone-red"><IconFileText size={19} /><strong>{stat('38')}</strong><span>待复习</span></article>
+      <article className="mobile-stat-card tone-green"><IconChartBar size={19} /><strong>{touched}</strong><span>已接触题目</span></article>
+      <article className="mobile-stat-card tone-blue"><IconChartBar size={19} /><strong>{accuracy}</strong><span>练习正确率</span></article>
+      <article className="mobile-stat-card tone-red"><IconFileText size={19} /><strong>{mistakes}</strong><span>待复习</span></article>
     </section>
     <section className="mobile-continue-card">
       <div className="mobile-card-heading"><span className="mobile-icon-box tone-blue"><IconBook size={22} /></span><div><strong>继续练习</strong><small>{preview ? '顺序练习 · 按题库顺序逐题练习' : bank ? `${bank.name} · ${bank.activeVersion?.questionCount ?? 0} 道题` : '连接服务端并导入题库后开始'}</small></div></div>
-      <div className="mobile-progress-label"><span>{preview ? '已完成 426 / 1283 题' : '尚无练习记录'}</span><span>{preview ? '33.2%' : '—'}</span></div>
-      <div className="mobile-progress-track"><span style={{ width: preview ? '33.2%' : '0%' }} /></div>
+      <div className="mobile-progress-label"><span>{preview ? '题库探索 426 / 1283 题' : progress ? `题库探索 ${progress.touchedCount} / ${progress.questionCount} 题` : progressLoading ? '正在读取学习进度…' : progressError || '尚无正式练习记录'}</span><span>{preview ? '33.2%' : progress?.explorationRate == null ? '—' : `${progress.explorationRate}%`}</span></div>
+      <div className="mobile-progress-track"><span style={{ width: `${preview ? 33.2 : progress?.explorationRate ?? 0}%` }} /></div>
       <MobileButton to={href('/practice')}>继续刷题 <IconChevronRight size={18} /></MobileButton>
     </section>
+    <section className="mobile-learning-details" aria-label="学习数据详情">
+      <div><small>当前题库题量</small><strong>{progress ? progress.questionCount : preview ? '1283' : '—'}</strong></div>
+      <div><small>未作答题目</small><strong>{progress ? progress.unansweredCount : preview ? '857' : '—'}</strong></div>
+      <div><small>历史正式提交</small><strong>{progress ? progress.submissionCount : '—'}</strong></div>
+      <div><small>已收藏</small><strong>{progress ? progress.favoriteCount : preview ? '12' : '—'}</strong></div>
+    </section>
+    <section className="mobile-type-accuracy"><h2>题型正确率</h2>{(['single', 'multiple', 'judgement'] as const).map((type, index) => {
+      const labels = ['单选题', '多选题', '判断题'];
+      const value = progress?.byType[type].accuracyRate;
+      return <div key={type}><span>{labels[index]}</span><strong>{value == null ? '—' : `${value}%`}</strong></div>;
+    })}</section>
+    <section className="mobile-recent-practice"><h2>最近练习</h2>{progress?.recentSessions.length ? progress.recentSessions.slice(0, 3).map(session => <div key={session.id}><span>{new Date(session.updatedAt).toLocaleDateString('zh-CN')} · {session.submittedCount}/{session.questionCount} 题</span><strong>{session.attempts ? `${Math.round(session.correctCount / session.attempts * 1000) / 10}%` : '—'}</strong></div>) : <p>{preview ? '开发预览 · 无正式学习记录' : progressLoading ? '正在读取…' : progressError || '暂无练习记录'}</p>}</section>
     <section className="mobile-quick-section"><div className="mobile-quick-grid">
       {quick.map(({ title, icon: Icon, to, tone }) => <Link className="mobile-quick-link" key={title} to={href(to)}><span className={`quick-icon tone-${tone}`}><Icon size={20} /></span><span>{title}</span></Link>)}
     </div></section>
@@ -85,7 +104,9 @@ function MobileHomePage() {
   </Screen>;
 }
 
-export function MobileDashboard() { return <div className="mobile-route"><MobileHomePage /></div>; }
+export function MobileDashboard({ progress, progressLoading, progressError }: { progress: PracticeProgress | null; progressLoading: boolean; progressError: string }) {
+  return <div className="mobile-route"><MobileHomePage progress={progress} progressLoading={progressLoading} progressError={progressError} /></div>;
+}
 
 export function StartPage() {
   return <Screen className="start-screen" immersive>
@@ -180,36 +201,85 @@ export function LoginPage() {
   </Screen>;
 }
 
-const practiceChoices = [
-  { title: '顺序练习', desc: '按照题库顺序逐题练习', icon: IconGridDots, tone: 'blue', type: 'all' },
-  { title: '随机练习', desc: '随机抽取题目进行练习', icon: IconTrophy, tone: 'amber', type: 'all' },
-  { title: '单选题练习', desc: preview ? '共 845 题' : '服务端接入后显示题量', icon: IconFileText, tone: 'blue', type: 'single' },
-  { title: '多选题练习', desc: preview ? '共 38 题' : '服务端接入后显示题量', icon: IconFileText, tone: 'purple', type: 'multiple' },
-  { title: '判断题练习', desc: preview ? '共 400 题' : '服务端接入后显示题量', icon: IconCircleCheck, tone: 'green', type: 'truefalse' },
-  { title: '错题专项练习', desc: preview ? '待复习 38 题' : '连接服务端后显示错题', icon: IconRefresh, tone: 'red', type: 'mistakes' },
-  { title: '收藏题目', desc: preview ? '共 12 题' : '连接服务端后显示收藏', icon: IconStar, tone: 'amber', type: 'favorites' },
+const practiceChoices: Array<{ title: string; desc: string; icon: typeof IconBook; tone: string; mode: PracticeMode }> = [
+  { title: '顺序练习', desc: '按照题库顺序逐题练习', icon: IconGridDots, tone: 'blue', mode: 'sequential' },
+  { title: '随机练习', desc: '随机抽题，本轮题目不重复', icon: IconTrophy, tone: 'amber', mode: 'random' },
+  { title: '单选题练习', desc: '只练习单选题', icon: IconFileText, tone: 'blue', mode: 'single' },
+  { title: '多选题练习', desc: '只练习多选题', icon: IconFileText, tone: 'purple', mode: 'multiple' },
+  { title: '判断题练习', desc: '只练习判断题', icon: IconCircleCheck, tone: 'green', mode: 'judgement' },
+  { title: '未做题目', desc: '筛选当前题库中从未提交的题目', icon: IconBook, tone: 'blue', mode: 'unanswered' },
+  { title: '错题专项练习', desc: '练习待复习状态的错题', icon: IconRefresh, tone: 'red', mode: 'mistakes' },
+  { title: '收藏题目', desc: '练习当前题库版本中已收藏的题目', icon: IconStar, tone: 'amber', mode: 'favorites' },
 ];
 
 export function PracticeSelectionPage() {
   const notice = useNotice();
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const { activeBank: bank, loading, error } = useBanks();
-  const descriptions: Record<string, string> = {
-    all: '按照题库顺序逐题练习',
-    single: preview ? '共 845 题' : bank ? `共 ${bank.activeVersion?.typeCounts.single ?? 0} 题` : '连接并登录后读取题量',
-    multiple: preview ? '共 38 题' : bank ? `共 ${bank.activeVersion?.typeCounts.multiple ?? 0} 题` : '连接并登录后读取题量',
-    truefalse: preview ? '共 400 题' : bank ? `共 ${bank.activeVersion?.typeCounts.judgement ?? 0} 题` : '连接并登录后读取题量',
-    mistakes: preview ? '待复习 38 题' : '连接服务端后读取错题',
-    favorites: preview ? '共 12 题' : '连接服务端后读取收藏',
+  const [activeSession, setActiveSession] = useState<{ id: string; mode: PracticeMode; currentPosition: number; questionCount: number; status: string } | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(false);
+  const [starting, setStarting] = useState<PracticeMode | null>(null);
+  const [startError, setStartError] = useState('');
+  const [quantity, setQuantity] = useState('20');
+  useEffect(() => {
+    if (preview || !user || !bank) { setActiveSession(null); return; }
+    let mounted = true;
+    setSessionLoading(true);
+    getActivePracticeSession(bank.id).then(result => { if (mounted) setActiveSession(result.session); })
+      .catch(reason => { if (mounted) setStartError(reason instanceof Error ? reason.message : '读取未完成练习失败。'); })
+      .finally(() => { if (mounted) setSessionLoading(false); });
+    return () => { mounted = false; };
+  }, [user?.id, bank?.id]);
+  const start = async (mode: PracticeMode) => {
+    setStartError('');
+    if (preview) {
+      const type = mode === 'judgement' ? 'truefalse' : mode === 'sequential' || mode === 'random' ? 'all' : mode;
+      navigate(href(`/practice/answer?type=${type}`)); return;
+    }
+    if (!user) { navigate('/login'); return; }
+    if (!bank) { setStartError(error || '请先连接并登录包含题库的服务端。'); return; }
+    setStarting(mode);
+    try {
+      const count = quantity === 'all' ? undefined : Number(quantity);
+      const result = await createPracticeSession(bank.id, mode, count);
+      navigate(`/practice/answer?session=${encodeURIComponent(result.session.id)}`);
+    } catch (reason) { setStartError(reason instanceof Error ? reason.message : '练习创建失败，请检查服务器连接后重试。'); }
+    finally { setStarting(null); }
   };
-  return <ResponsivePage desktop={<DesktopPlaceholder title="日常练习" />}>
+  const resume = async () => {
+    if (!activeSession) return;
+    setStartError(''); setStarting(activeSession.mode);
+    try {
+      await resumePracticeSession(activeSession.id);
+      navigate(`/practice/answer?session=${encodeURIComponent(activeSession.id)}`);
+    } catch (reason) { setStartError(reason instanceof Error ? reason.message : '恢复练习失败。'); }
+    finally { setStarting(null); }
+  };
+  return <ResponsivePage desktop={<DesktopPracticeSelection bankName={bank?.name} activeSession={activeSession} sessionLoading={sessionLoading} starting={starting} error={startError || error} quantity={quantity} setQuantity={setQuantity} onStart={start} onResume={resume} />}>
     <Screen className="list-screen" immersive><Header title="日常练习" back="/" right={<button className="header-icon" aria-label="更多" onClick={() => notice.notify('练习筛选可组合使用。')}><IconDots size={21} /></button>} /><PreviewBadge /><div className="practice-list">
-      {practiceChoices.map(({ title, desc, icon: Icon, tone, type }) => <Link className="practice-choice" key={title} to={href(`/practice/answer?type=${type}`)}><span className={`choice-icon tone-${tone}`}><Icon size={21} /></span><span className="choice-copy"><strong>{title}</strong><small>{type === 'all' ? desc : descriptions[type] ?? desc}</small></span><IconChevronRight className="choice-chevron" size={18} /></Link>)}
-    </div><div className="mobile-info-note"><IconInfoCircle size={16} />{error || (loading ? '正在读取服务端题库…' : bank ? `当前题库：${bank.name}。正式练习答题将在后续阶段接入。` : '题量仅在已登录且服务端配置启用题库后显示。')}</div><Toast message={notice.message} /></Screen>
+      {activeSession && <button className="practice-resume-card" type="button" onClick={() => void resume()} disabled={Boolean(starting)}><span><strong>继续上次练习</strong><small>第 {activeSession.currentPosition} / {activeSession.questionCount} 题 · {activeSession.status === 'exited' ? '已暂时退出' : '进行中'}</small></span><IconChevronRight size={19} /></button>}
+      <label className="practice-quantity">本轮题量<select aria-label="选择本轮题量" value={quantity} onChange={event => setQuantity(event.target.value)}><option value="20">20 题</option><option value="50">50 题</option><option value="100">100 题</option><option value="all">全部可用题目</option></select></label>
+      {practiceChoices.map(({ title, desc, icon: Icon, tone, mode }) => <button className="practice-choice" type="button" key={mode} disabled={Boolean(starting)} onClick={() => void start(mode)}><span className={`choice-icon tone-${tone}`}><Icon size={21} /></span><span className="choice-copy"><strong>{title}</strong><small>{desc}</small></span><IconChevronRight className="choice-chevron" size={18} /></button>)}
+    </div>{startError && <p className="form-error" role="alert">{startError}</p>}<div className="mobile-info-note"><IconInfoCircle size={16} />{preview ? '开发预览使用隔离测试数据，不会访问正式题库。' : error || (loading || sessionLoading ? '正在读取服务端题库和未完成练习…' : bank ? `当前题库：${bank.name}。答题和统计由本机服务端保存。` : '请先连接服务器并登录，再选择题库开始练习。')}</div><Toast message={notice.message} /></Screen>
   </ResponsivePage>;
 }
 
 function DesktopPlaceholder({ title }: { title: string }) {
   return <div className="desktop-placeholder-message"><h1>{title}</h1><p>手机页面已实现。桌面学习模块仍等待服务端接入。</p></div>;
+}
+
+function DesktopPracticeSelection({ bankName, activeSession, sessionLoading, starting, error, quantity, setQuantity, onStart, onResume }: {
+  bankName?: string;
+  activeSession: { id: string; mode: PracticeMode; currentPosition: number; questionCount: number; status: string } | null;
+  sessionLoading: boolean; starting: PracticeMode | null; error: string; quantity: string; setQuantity: (value: string) => void;
+  onStart: (mode: PracticeMode) => Promise<void>; onResume: () => Promise<void>;
+}) {
+  return <main className="desktop-practice-page"><div className="desktop-practice-heading"><div><span>学习中心 / 日常练习</span><h1>选择练习方式</h1><p>{bankName ? `当前题库：${bankName}。练习进度和答题结果由本机服务端保存。` : '连接并登录本机服务端后开始练习。'}</p></div><label>本轮题量<select value={quantity} onChange={event => setQuantity(event.target.value)}><option value="20">20 题</option><option value="50">50 题</option><option value="100">100 题</option><option value="all">全部可用题目</option></select></label></div>
+    {activeSession && <button className="desktop-practice-resume" onClick={() => void onResume()} disabled={Boolean(starting)}><span><strong>继续上次练习</strong><small>第 {activeSession.currentPosition} / {activeSession.questionCount} 题 · {activeSession.status === 'exited' ? '已暂时退出' : '进行中'}</small></span><IconChevronRight size={21} /></button>}
+    <div className="desktop-practice-grid">{practiceChoices.map(({ title, desc, icon: Icon, tone, mode }) => <button key={mode} className="desktop-practice-mode" disabled={Boolean(starting)} onClick={() => void onStart(mode)}><span className={`choice-icon tone-${tone}`}><Icon size={22} /></span><span><strong>{title}</strong><small>{desc}</small></span><IconChevronRight size={19} /></button>)}</div>
+    {(error || sessionLoading) && <p className={error ? 'form-error' : 'desktop-practice-muted'}>{error || '正在读取未完成练习…'}</p>}
+  </main>;
 }
 
 function ResponsivePage({ children, desktop }: { children: ReactNode; desktop?: ReactNode }) {
@@ -224,7 +294,7 @@ const options = longFixture
   ? ['开始作业前应检查设备和现场环境，确认防护装置完好并按操作规程逐项核对。', '发现设备异常时立即停止操作，切断相关电源并按现场流程报告负责人。', '作业过程中保持安全距离，按要求佩戴防护用品，不擅自拆除安全装置。', '完成作业后清理现场并记录异常情况，确认设备处于规定的安全状态。']
   : ['选项内容示例', '选项内容示例', '选项内容示例', '选项内容示例'];
 
-export function PracticeAnswerPage() {
+function PreviewPracticeAnswerPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const params = new URLSearchParams(location.search);
@@ -244,7 +314,7 @@ export function PracticeAnswerPage() {
   </Screen></ResponsivePage>;
 }
 
-export function PracticeResultPage() {
+function PreviewPracticeResultPage() {
   const location = useLocation();
   const answer = new URLSearchParams(location.search).get('answer') || (preview ? 'A' : '');
   const correct = answer === 'B';
@@ -253,6 +323,181 @@ export function PracticeResultPage() {
     {preview ? <><section className={`answer-feedback${correct ? ' is-correct' : ''}`}><span className="feedback-icon">{correct ? <IconCheck size={22} /> : <IconX size={22} />}</span><div><strong>{correct ? '回答正确' : '回答错误'}</strong><span>正确答案：B</span><span>你的答案：{answer || '未作答'}</span></div></section><div className="question-content result-question"><h2>{question}</h2><div className="answer-options">{options.map((label, index) => { const letter = String.fromCharCode(65 + index); const state = letter === 'B' ? ' is-correct' : letter === answer ? ' is-wrong' : ''; return <div key={letter} className={`answer-option result-option${state}`}><span className="option-radio">{letter === 'B' ? <IconCheck size={13} /> : letter === answer ? <IconX size={13} /> : null}</span><strong>{letter}.</strong><span>{label}</span></div>; })}</div></div><div className="standard-answer">正确答案：B</div></> : <div className="empty-state"><IconWifi size={26} /><strong>等待服务端答题反馈</strong><span>尚未连接本地服务端，当前没有真实作答结果。</span></div>}
     <div className="question-footer"><MobileButton to={href('/practice/answer')} secondary>上一题</MobileButton><MobileButton to={href('/practice/answer')}>下一题 <IconChevronRight size={17} /></MobileButton></div>
   </Screen></ResponsivePage>;
+}
+
+export function PracticeAnswerPage() {
+  return preview ? <PreviewPracticeAnswerPage /> : <PracticeSessionAnswerPage />;
+}
+
+function PracticeSessionAnswerPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const params = new URLSearchParams(location.search);
+  const sessionId = params.get('session') ?? '';
+  const requestedPosition = Number(params.get('position') ?? 0);
+  const { user } = useAuth();
+  const [session, setSession] = useState<Awaited<ReturnType<typeof getPracticeSession>>['session'] | null>(null);
+  const [current, setCurrent] = useState<Awaited<ReturnType<typeof getPracticeQuestion>> | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [favorite, setFavorite] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
+  const draftKey = sessionId && user ? `theory-exam.practice-draft.${user.id}.${sessionId}.${requestedPosition || session?.currentPosition || 1}` : '';
+
+  useEffect(() => {
+    if (!sessionId) { setLoading(false); setError('练习会话链接无效，请从练习模式中重新进入。'); return; }
+    let active = true;
+    setLoading(true); setError('');
+    (async () => {
+      let loaded = await getPracticeSession(sessionId);
+      if (loaded.session.status === 'exited') loaded = await resumePracticeSession(sessionId);
+      const position = requestedPosition > 0 ? requestedPosition : loaded.session.currentPosition;
+      const question = await getPracticeQuestion(sessionId, position);
+      if (!active) return;
+      setSession(loaded.session); setCurrent(question);
+      if (question.submitted) {
+        navigate(`/practice/result?session=${encodeURIComponent(sessionId)}&position=${position}`, { replace: true });
+        return;
+      }
+      const key = `theory-exam.practice-draft.${user?.id ?? 'unknown'}.${sessionId}.${position}`;
+      const draft = localStorage.getItem(key);
+      setSelected(draft ? JSON.parse(draft) as string[] : []);
+      const favorites = await getFavorites(question.question.bankId);
+      if (active) setFavorite(favorites.items.some(item => item.id === question.question.id));
+    })().catch(reason => { if (active) setError(reason instanceof Error ? reason.message : '题目读取失败。'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [sessionId, requestedPosition, user?.id, retry]);
+
+  const selectOption = (letter: string) => {
+    if (!current || current.submitted) return;
+    const next = current.question.type === 'multiple'
+      ? (selected.includes(letter) ? selected.filter(item => item !== letter) : [...selected, letter].sort())
+      : [letter];
+    setSelected(next);
+    if (draftKey) localStorage.setItem(draftKey, JSON.stringify(next));
+  };
+  const toggleFavorite = async () => {
+    if (!current || !session) return;
+    try {
+      const result = await setQuestionFavorite(current.question.id, session.bankId, !favorite);
+      setFavorite(result.favorite);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : '收藏操作失败。'); }
+  };
+  const move = async (position: number) => {
+    if (!session) return;
+    if (selected.length && !window.confirm('当前答案尚未提交，会保留在此设备。仍要切换题目吗？')) return;
+    try {
+      await movePracticePosition(session.id, position);
+      navigate(`/practice/answer?session=${encodeURIComponent(session.id)}&position=${position}`);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : '切换题目失败。'); }
+  };
+  const submit = async () => {
+    if (!session || !current) return;
+    if (!selected.length) { setError('请先选择答案，再提交作答。'); return; }
+    setError(''); setSubmitting(true);
+    try {
+      await submitPracticeAnswer(session.id, selected);
+      if (draftKey) localStorage.removeItem(draftKey);
+      navigate(`/practice/result?session=${encodeURIComponent(session.id)}&position=${current.position}`);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : '网络失败，服务器没有确认保存，请检查连接后重试。'); }
+    finally { setSubmitting(false); }
+  };
+  const exit = async () => {
+    if (!session) { navigate('/practice'); return; }
+    try { await exitPracticeSession(session.id); navigate('/practice'); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : '暂时退出失败，练习仍保存在服务端。'); }
+  };
+  return <ResponsivePage desktop={<DesktopPracticeQuestion session={session} current={current} selected={selected} favorite={favorite} loading={loading} submitting={submitting} error={error} onSelect={selectOption} onFavorite={() => void toggleFavorite()} onMove={position => void move(position)} onSubmit={() => void submit()} onExit={() => void exit()} />}><Screen className="question-screen practice-live-screen" immersive dataQuestionId={current?.question.id}>
+    <Header title="日常练习" back="/practice" right={current && <div className="question-tools"><span>{current.position} / {current.total}</span><button aria-label={favorite ? '取消收藏' : '收藏题目'} className={favorite ? 'is-saved' : ''} onClick={() => void toggleFavorite()}><IconStar size={21} /></button></div>} />
+    {loading ? <div className="empty-state" role="status"><IconRefresh size={24} /><strong>正在读取题目…</strong></div> : error && !current ? <div className="empty-state"><IconWifi size={26} /><strong>题目读取失败</strong><span>{error}</span><MobileButton onClick={() => setRetry(value => value + 1)}>重试</MobileButton></div> : current ? <>
+      <div className="question-content"><span className="question-type-chip">{current.question.type === 'single' ? '单选题' : current.question.type === 'multiple' ? '多选题' : '判断题'}</span><h2>{current.question.stem}</h2><div className="answer-options">{Object.entries(current.question.options).map(([letter, label]) => <button type="button" key={letter} className={`answer-option${selected.includes(letter) ? ' is-selected' : ''}`} aria-pressed={selected.includes(letter)} onClick={() => selectOption(letter)}><span className={current.question.type === 'multiple' ? 'option-checkbox' : 'option-radio'}>{selected.includes(letter) && (current.question.type === 'multiple' ? <IconCheck size={13} /> : <i />)}</span><strong>{letter}.</strong><span>{label}</span></button>)}</div><p className="practice-draft-note">未提交选择只保存在本设备，不计入学习记录。</p>{error && <p className="form-error" role="alert">{error}</p>}</div>
+      <div className="practice-live-actions"><button type="button" className="mobile-button is-secondary" disabled={current.position <= 1} onClick={() => void move(current.position - 1)}>上一题</button><button type="button" className="mobile-button" disabled={submitting} onClick={() => void submit()}>{submitting ? '正在提交…' : '提交答案'}</button><button type="button" className="mobile-button is-secondary" disabled={current.position >= current.total} onClick={() => void move(current.position + 1)}>下一题</button></div>
+      <button type="button" className="practice-exit-link" onClick={() => void exit()}>暂时退出，稍后继续</button>
+    </> : <div className="empty-state"><IconWifi size={26} /><strong>当前没有可显示的题目</strong><span>返回练习模式，重新选择题库或筛选条件。</span><MobileButton to="/practice">返回练习选择</MobileButton></div>}
+  </Screen></ResponsivePage>;
+}
+
+function DesktopPracticeQuestion({ session, current, selected, favorite, loading, submitting, error, onSelect, onFavorite, onMove, onSubmit, onExit }: {
+  session: Awaited<ReturnType<typeof getPracticeSession>>['session'] | null;
+  current: Awaited<ReturnType<typeof getPracticeQuestion>> | null;
+  selected: string[]; favorite: boolean; loading: boolean; submitting: boolean; error: string;
+  onSelect: (letter: string) => void; onFavorite: () => void; onMove: (position: number) => void; onSubmit: () => void; onExit: () => void;
+}) {
+  return <main className="desktop-practice-page desktop-practice-question"><div className="desktop-practice-heading"><div><span>学习中心 / 日常练习{session ? ` / ${session.mode}` : ''}</span><h1>练习答题</h1></div>{current && <div className="desktop-question-toolbar"><strong>{current.position} / {current.total}</strong><button aria-label={favorite ? '取消收藏' : '收藏题目'} className={favorite ? 'is-saved' : ''} onClick={onFavorite}><IconStar size={20} /></button></div>}</div>
+    {loading ? <div className="desktop-practice-empty">正在读取题目…</div> : error && !current ? <div className="desktop-practice-empty">{error}</div> : current ? <><section className="desktop-question-card"><span className="question-type-chip">{current.question.type === 'single' ? '单选题' : current.question.type === 'multiple' ? '多选题' : '判断题'}</span><h2>{current.question.stem}</h2><div className="desktop-answer-options">{Object.entries(current.question.options).map(([letter, label]) => <button key={letter} className={`answer-option${selected.includes(letter) ? ' is-selected' : ''}`} aria-pressed={selected.includes(letter)} onClick={() => onSelect(letter)}><span className={current.question.type === 'multiple' ? 'option-checkbox' : 'option-radio'}>{selected.includes(letter) && (current.question.type === 'multiple' ? <IconCheck size={13} /> : <i />)}</span><strong>{letter}.</strong><span>{label}</span></button>)}</div><p className="practice-draft-note">未提交选择只保存在此设备，不计入学习记录。</p></section><div className="desktop-practice-actions"><button className="button button-outline" disabled={current.position <= 1} onClick={() => onMove(current.position - 1)}>上一题</button><button className="button button-primary" disabled={submitting} onClick={onSubmit}>{submitting ? '正在提交…' : '提交答案'}</button><button className="button button-outline" disabled={current.position >= current.total} onClick={() => onMove(current.position + 1)}>下一题</button><button className="button button-text" onClick={onExit}>暂时退出</button></div></> : <div className="desktop-practice-empty">当前没有可显示的题目，请返回练习选择。</div>}
+  </main>;
+}
+
+export function PracticeResultPage() {
+  return preview ? <PreviewPracticeResultPage /> : <PracticeSessionResultPage />;
+}
+
+function PracticeSessionResultPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const params = new URLSearchParams(location.search);
+  const sessionId = params.get('session') ?? '';
+  const position = Number(params.get('position') ?? 1);
+  const [data, setData] = useState<Awaited<ReturnType<typeof getPracticeResult>> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [moving, setMoving] = useState(false);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    if (!sessionId) { setLoading(false); setError('缺少已保存的练习结果。'); return; }
+    let active = true;
+    setLoading(true); setError('');
+    getPracticeResult(sessionId, position).then(value => { if (active) setData(value); })
+      .catch(reason => { if (active) setError(reason instanceof Error ? reason.message : '练习结果读取失败。'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [sessionId, position, retry]);
+  const go = async (nextPosition: number) => {
+    if (!data) return;
+    setMoving(true); setError('');
+    try {
+      const result = await movePracticePosition(sessionId, nextPosition);
+      navigate(result.currentQuestion.submitted
+        ? `/practice/result?session=${encodeURIComponent(sessionId)}&position=${nextPosition}`
+        : `/practice/answer?session=${encodeURIComponent(sessionId)}&position=${nextPosition}`);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : '切换题目失败。'); }
+    finally { setMoving(false); }
+  };
+  const exit = async () => {
+    if (!sessionId) { navigate('/practice'); return; }
+    setMoving(true);
+    try { await exitPracticeSession(sessionId); navigate('/practice'); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : '暂时退出失败，练习仍保存在服务端。'); }
+    finally { setMoving(false); }
+  };
+  const value = data?.result;
+  const letters = value ? new Set(value.correctAnswer) : new Set<string>();
+  const submitted = value ? new Set(value.userAnswer) : new Set<string>();
+  return <ResponsivePage desktop={<DesktopPracticeResult data={data} loading={loading} error={error} moving={moving} onRetry={() => setRetry(value => value + 1)} onMove={go} onExit={() => void exit()} />}><Screen className="result-screen practice-live-screen" immersive dataQuestionId={data?.question.id}>
+    <Header title="答题结果" back="/practice" right={data && <span className="question-tools">{position} / {data.session.questionCount}</span>} />
+    {loading ? <div className="empty-state" role="status"><IconRefresh size={24} /><strong>正在读取服务器反馈…</strong></div> : error && !data ? <div className="empty-state"><IconWifi size={26} /><strong>结果读取失败</strong><span>{error}</span><MobileButton onClick={() => setRetry(value => value + 1)}>重试</MobileButton></div> : data && value ? <>
+      <section className={`answer-feedback${value.isCorrect ? ' is-correct' : ''}`}><span className="feedback-icon">{value.isCorrect ? <IconCheck size={22} /> : <IconX size={22} />}</span><div><strong>{value.isCorrect ? '回答正确' : '回答错误'}</strong><span>你的答案：{value.userAnswer.join('、')}</span><span>正确答案：{value.correctAnswer.join('、')}</span></div></section>
+      <div className="question-content result-question"><h2>{data.question.stem}</h2><div className="answer-options">{Object.entries(data.question.options).map(([letter, label]) => { const correct = letters.has(letter); const wrong = submitted.has(letter) && !correct; return <div key={letter} className={`answer-option result-option${correct ? ' is-correct' : wrong ? ' is-wrong' : ''}`}><span className="option-radio">{correct ? <IconCheck size={13} /> : wrong ? <IconX size={13} /> : null}</span><strong>{letter}.</strong><span>{label}</span></div>; })}</div></div>
+      <div className="standard-answer">标准答案：{value.correctAnswer.map(letter => `${letter}. ${value.correctOptions[letter]}`).join('；')}<small>{value.explanation}</small></div>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <div className="question-footer"><button type="button" className="mobile-button is-secondary" disabled={moving || position <= 1} onClick={() => void go(position - 1)}>上一题</button>{position < data.session.questionCount ? <button type="button" className="mobile-button" disabled={moving} onClick={() => void go(position + 1)}>下一题 <IconChevronRight size={17} /></button> : <MobileButton to="/practice">返回练习选择</MobileButton>}<button type="button" className="mobile-button is-secondary" disabled={moving} onClick={() => void exit()}>暂时退出</button></div>
+    </> : <div className="empty-state"><IconWifi size={26} /><strong>暂无已保存反馈</strong><span>{error || '服务器尚未确认此题作答。'}</span><MobileButton to={`/practice/answer?session=${encodeURIComponent(sessionId)}&position=${position}`}>返回答题</MobileButton></div>}
+  </Screen></ResponsivePage>;
+}
+
+function DesktopPracticeResult({ data, loading, error, moving, onRetry, onMove, onExit }: {
+  data: Awaited<ReturnType<typeof getPracticeResult>> | null; loading: boolean; error: string; moving: boolean;
+  onRetry: () => void; onMove: (position: number) => Promise<void>; onExit: () => void;
+}) {
+  if (loading) return <main className="desktop-practice-page"><div className="desktop-practice-empty">正在读取服务器反馈…</div></main>;
+  if (!data) return <main className="desktop-practice-page"><div className="desktop-practice-empty">{error || '暂无已保存反馈。'} <button onClick={onRetry}>重试</button></div></main>;
+  const { question, result, session } = data;
+  const correct = new Set(result.correctAnswer);
+  const chosen = new Set(result.userAnswer);
+  return <main className="desktop-practice-page desktop-practice-question"><div className="desktop-practice-heading"><div><span>学习中心 / 日常练习</span><h1>答题结果</h1></div><strong>{data.position} / {session.questionCount}</strong></div><section className={`answer-feedback${result.isCorrect ? ' is-correct' : ''}`}><span className="feedback-icon">{result.isCorrect ? <IconCheck size={22} /> : <IconX size={22} />}</span><div><strong>{result.isCorrect ? '回答正确' : '回答错误'}</strong><span>你的答案：{result.userAnswer.join('、')}</span><span>正确答案：{result.correctAnswer.join('、')}</span></div></section><section className="desktop-question-card"><h2>{question.stem}</h2><div className="desktop-answer-options">{Object.entries(question.options).map(([letter, label]) => { const isCorrect = correct.has(letter); const isWrong = chosen.has(letter) && !isCorrect; return <div key={letter} className={`answer-option result-option${isCorrect ? ' is-correct' : isWrong ? ' is-wrong' : ''}`}><span className="option-radio">{isCorrect ? <IconCheck size={13} /> : isWrong ? <IconX size={13} /> : null}</span><strong>{letter}.</strong><span>{label}</span></div>; })}</div><div className="standard-answer">标准答案：{result.correctAnswer.map(letter => `${letter}. ${result.correctOptions[letter]}`).join('；')}<small>{result.explanation}</small></div></section><div className="desktop-practice-actions"><button className="button button-outline" disabled={moving || data.position <= 1} onClick={() => void onMove(data.position - 1)}>上一题</button>{data.position < session.questionCount ? <button className="button button-primary" disabled={moving} onClick={() => void onMove(data.position + 1)}>下一题</button> : <Link className="button button-primary" to="/practice">返回练习选择</Link>}<button className="button button-text" disabled={moving} onClick={onExit}>暂时退出</button></div>{error && <p className="form-error">{error}</p>}</main>;
 }
 
 export function ExamSettingsPage() {

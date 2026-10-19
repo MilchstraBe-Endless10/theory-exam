@@ -221,7 +221,7 @@ try {
   pass('manual connection expands, validates addresses, and does not claim a server connection');
 
   await navigate(`/practice${preview}`);
-  await click('.practice-choice:nth-child(3)');
+  await click('button.practice-choice:nth-of-type(3)');
   await waitFor(() => evaluate('location.pathname === "/practice/answer"'), 'single-choice practice did not open its question');
   check(new URLSearchParams(await evaluate('location.search')).get('type') === 'single', 'practice choice did not preserve question type');
   await click('a.back-button');

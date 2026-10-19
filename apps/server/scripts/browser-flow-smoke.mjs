@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -11,7 +12,7 @@ const serverDir = fileURLToPath(new URL('..', import.meta.url));
 const projectDir = resolve(serverDir, '../..');
 const mobileDir = join(projectDir, 'apps', 'mobile');
 const workbookPath = join(projectDir, 'local-input', '四级理论试题.xlsx');
-const screenshotDir = process.env.P1_BROWSER_SCREENSHOT_DIR ? resolve(process.env.P1_BROWSER_SCREENSHOT_DIR) : '';
+const screenshotDir = process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR ? resolve(process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR) : '';
 const adminPassword = `P1BrowserAdmin-${randomBytes(16).toString('hex')}!`;
 const userPassword = `P1BrowserUser-${randomBytes(16).toString('hex')}!`;
 const temporaryDirectory = mkdtempSync(join(tmpdir(), 'theory-exam-p1-browser-'));
@@ -22,6 +23,7 @@ const failures = [];
 const consoleErrors = [];
 let browser;
 let socket;
+let testDatabase;
 let commandId = 0;
 
 function getFreePort() {
@@ -79,6 +81,16 @@ async function navigate(url) {
 async function click(selector) {
   const clicked = await evaluate(`(() => { const element = document.querySelector(${JSON.stringify(selector)}); if (!element) return false; element.click(); return true; })()`);
   assert.equal(clicked, true, `Missing control: ${selector}`);
+}
+
+async function clickContaining(selector, label) {
+  const clicked = await evaluate(`(() => { const element = [...document.querySelectorAll(${JSON.stringify(selector)})].find(item => item.innerText.includes(${JSON.stringify(label)})); if (!element) return false; element.click(); return true; })()`);
+  assert.equal(clicked, true, `Missing ${selector} containing: ${label}`);
+}
+
+async function clickAnswer(letter, root = '.mobile-route') {
+  const clicked = await evaluate(`(() => { const selector = ${JSON.stringify(root)} + ' .answer-option'; const element = [...document.querySelectorAll(selector)].find(item => item.innerText.trim().startsWith(${JSON.stringify(`${letter}.`)})); if (!element) return false; element.click(); return true; })()`);
+  assert.equal(clicked, true, `Could not select option ${letter}.`);
 }
 
 async function fill(selector, value) {
@@ -195,12 +207,17 @@ try {
   assert.ok(input.nodeId, 'Admin UI file input is missing.');
   await cdp('DOM.setFileInputFiles', { nodeId: input.nodeId, files: [workbookPath] });
   await click('form.admin-import-form button.admin-primary');
-  await waitFor(async () => (await bodyText()).includes('导入预览'), 'Admin UI import preview did not appear.', 60000);
+  try {
+    await waitFor(async () => (await bodyText()).includes('导入预览'), 'Admin UI import preview did not appear.', 120000);
+  } catch (error) {
+    console.error('Admin import page state:', (await bodyText()).slice(0, 1200));
+    throw error;
+  }
   const previewText = await bodyText();
   for (const expected of ['1283', '845', '38', '400']) assert.ok(previewText.includes(expected), `Admin UI preview omitted ${expected} questions.`);
   assert.ok(previewText.includes('0') && previewText.includes('缺少答案'), 'Admin UI preview did not show zero missing answers.');
   await click('button.admin-confirm');
-  await waitFor(async () => (await bodyText()).includes('导入完成：1283 道题，版本 1'), 'Admin UI import confirmation did not finish.', 60000);
+  await waitFor(async () => (await bodyText()).includes('导入完成：1283 道题，版本 1'), 'Admin UI import confirmation did not finish.', 120000);
   assert.ok((await bodyText()).includes('单选 845 · 多选 38 · 判断 400'), 'Imported bank counts are not shown in the admin UI.');
   await capture('admin-import-success.png');
   console.log('PASS browser admin bootstrap, account creation, real Excel preview (1283/845/38/400), and confirmation');
@@ -216,13 +233,113 @@ try {
   await fill('.login-content input[autocomplete="username"]', 'p1-browser-learner');
   await fill('.login-content input[autocomplete="current-password"]', userPassword);
   await click('.login-content form button[type="submit"]');
-  await waitFor(async () => (await evaluate('location.pathname')) === '/', 'Ordinary user login did not return to the learning home.');
+  await waitFor(async () => (await evaluate('location.pathname')) === '/' && (await bodyText()).includes('p1-browser-learner') && (await bodyText()).includes('1283 道题'), 'Ordinary user login did not restore the account and imported bank on the learning home.');
   const homeText = await bodyText();
   assert.ok(homeText.includes('p1-browser-learner'), 'The authenticated ordinary user is not shown on the learning home.');
-  await waitFor(async () => (await bodyText()).includes('1283 道题'), 'Learning home did not load the imported bank from /api/banks.');
   await capture('390x844-ordinary-user-login.png');
   console.log('PASS browser server health check and ordinary user login');
 
+  testDatabase = new DatabaseSync(databasePath);
+  await navigate(`${viteOrigin}/practice`);
+  await waitFor(async () => (await evaluate('document.querySelectorAll("button.practice-choice").length')) === 8, 'Daily practice modes did not load.');
+  await capture('390x844-practice-selection.png');
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 1536, height: 1024, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${viteOrigin}/practice`);
+  await waitFor(async () => await evaluate('Boolean(document.querySelector(".desktop-practice-grid"))'), 'Desktop practice selection did not render.');
+  await capture('1536x1024-practice-selection.png');
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await navigate(`${viteOrigin}/practice`);
+  await waitFor(async () => (await evaluate('document.querySelectorAll("button.practice-choice").length')) === 8, 'Mobile practice modes did not reload.');
+  await clickContaining('button.practice-choice', '单选题练习');
+  await waitFor(async () => (await evaluate('location.pathname === "/practice/answer" && !!document.querySelector(".practice-live-screen[data-question-id]")')), 'A real server-backed practice question did not load.');
+  const sessionId = await evaluate('new URLSearchParams(location.search).get("session")');
+  const firstQuestionId = await evaluate('document.querySelector(".practice-live-screen").dataset.questionId');
+  const questionText = await bodyText();
+  assert.ok(!questionText.includes('正确答案') && !questionText.includes('标准答案'), 'Practice question view exposed its correct answer before submission.');
+  await capture('390x844-practice-question.png');
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
+  await capture('360x800-practice-question.png');
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 1536, height: 1024, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${viteOrigin}/practice/answer?session=${sessionId}&position=1`);
+  await waitFor(async () => await evaluate('Boolean(document.querySelector(".desktop-practice-question .desktop-question-card"))'), 'Desktop live practice question did not render.');
+  await capture('1536x1024-practice-question.png');
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await navigate(`${viteOrigin}/practice/answer?session=${sessionId}&position=1`);
+  await waitFor(async () => await evaluate('Boolean(document.querySelector(".practice-live-screen[data-question-id]"))'), 'Mobile live practice question did not reload.');
+  const firstQuestion = testDatabase.prepare('SELECT answer_json FROM questions WHERE id = ?').get(firstQuestionId);
+  assert.ok(firstQuestion, 'Practice question was not read from the imported SQLite bank.');
+  const correctLetter = JSON.parse(firstQuestion.answer_json)[0];
+  await clickAnswer(correctLetter);
+  const attemptsBeforeFailure = Number(testDatabase.prepare('SELECT COUNT(*) AS count FROM practice_attempts WHERE practice_session_id = ?').get(sessionId).count);
+  await evaluate(`(() => {
+    const original = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      if (String(input).includes('/submit')) {
+        window.fetch = original;
+        return Promise.reject(new TypeError('Failed to fetch'));
+      }
+      return original(input, init);
+    };
+  })()`);
+  await clickContaining('.practice-live-actions button', '提交答案');
+  await waitFor(async () => (await evaluate('location.pathname === "/practice/answer"')) && (await bodyText()).includes('无法连接服务器'), 'A simulated network failure was incorrectly shown as a saved answer.');
+  assert.equal(Number(testDatabase.prepare('SELECT COUNT(*) AS count FROM practice_attempts WHERE practice_session_id = ?').get(sessionId).count), attemptsBeforeFailure);
+  assert.ok(!(await bodyText()).includes('回答正确'), 'A network failure displayed successful feedback without a server response.');
+  await clickContaining('.practice-live-actions button', '提交答案');
+  await waitFor(async () => (await evaluate('location.pathname === "/practice/result"')) && (await bodyText()).includes('回答正确'), 'Server did not return a successful correct-answer result.');
+  assert.equal(Number(testDatabase.prepare('SELECT is_correct AS value FROM practice_attempts WHERE practice_session_id = ? AND question_id = ?').get(sessionId, firstQuestionId).value), 1);
+  await capture('390x844-practice-correct-feedback.png');
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
+  await capture('360x800-practice-correct-feedback.png');
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+
+  await clickContaining('.question-footer button', '下一题');
+  await waitFor(async () => (await evaluate('location.pathname === "/practice/answer" && Number(new URLSearchParams(location.search).get("position")) === 2')) && await evaluate('Boolean(document.querySelector(".practice-live-screen[data-question-id]"))'), 'Could not move to the next question in the session.');
+  const secondQuestionId = await evaluate('document.querySelector(".practice-live-screen").dataset.questionId');
+  const secondQuestion = testDatabase.prepare('SELECT answer_json, options_json FROM questions WHERE id = ?').get(secondQuestionId);
+  assert.ok(secondQuestion, 'Second question was not read from the imported SQLite bank.');
+  const secondCorrect = JSON.parse(secondQuestion.answer_json);
+  const secondOptions = Object.keys(JSON.parse(secondQuestion.options_json));
+  const wrongLetter = secondOptions.find(letter => !secondCorrect.includes(letter));
+  assert.ok(wrongLetter, 'Second single-choice question has no distinct wrong option.');
+  await clickAnswer(wrongLetter);
+  await clickContaining('.practice-live-actions button', '提交答案');
+  await waitFor(async () => (await evaluate('location.pathname === "/practice/result"')) && (await bodyText()).includes('回答错误'), 'Server did not return the wrong-answer feedback.');
+  assert.equal(Number(testDatabase.prepare('SELECT is_correct AS value FROM practice_attempts WHERE practice_session_id = ? AND question_id = ?').get(sessionId, secondQuestionId).value), 0);
+  await capture('390x844-practice-wrong-feedback.png');
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
+  await capture('360x800-practice-wrong-feedback.png');
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 1536, height: 1024, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${viteOrigin}/practice/result?session=${sessionId}&position=2`);
+  await waitFor(async () => (await bodyText()).includes('回答错误') && await evaluate('Boolean(document.querySelector(".desktop-practice-question"))'), 'Desktop practice result did not render.');
+  await capture('1536x1024-practice-wrong-feedback.png');
+  console.log('PASS browser real Excel question delivery, correct/wrong grading, persisted feedback, and mobile/desktop result layouts');
+
+  await click('.desktop-practice-actions .button-text');
+  await waitFor(async () => (await evaluate('location.pathname')) === '/practice' && await evaluate('Boolean(document.querySelector(".desktop-practice-resume"))'), 'Exited practice session could not be restored from selection.');
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await navigate(`${viteOrigin}/me`);
+  await click('.logout-button');
+  await waitFor(async () => (await bodyText()).includes('已退出登录'), 'Server-confirmed logout did not complete.');
+  await navigate(`${viteOrigin}/login`);
+  await fill('.login-content input[autocomplete="username"]', 'p1-browser-learner');
+  await fill('.login-content input[autocomplete="current-password"]', userPassword);
+  await click('.login-content form button[type="submit"]');
+  await waitFor(async () => (await evaluate('location.pathname')) === '/' && (await bodyText()).includes('练习正确率'), 'Relogin did not restore the real progress dashboard.');
+  await waitFor(async () => await evaluate('document.querySelectorAll(".mobile-stat-card strong")[0]?.innerText === "2" && document.querySelectorAll(".mobile-stat-card strong")[1]?.innerText === "50%"'), 'Mobile dashboard did not finish loading persisted learning statistics.');
+  const touched = await evaluate('document.querySelectorAll(".mobile-stat-card strong")[0]?.innerText');
+  assert.equal(touched, '2', 'Dashboard did not restore the number of distinct touched questions after relogin.');
+  assert.ok((await bodyText()).includes('50%'), 'Dashboard accuracy does not reflect the saved right and wrong answers.');
+  await capture('390x844-home-real-practice-progress.png');
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
+  await capture('360x800-home-real-practice-progress.png');
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 1536, height: 1024, deviceScaleFactor: 1, mobile: false });
+  await navigate(`${viteOrigin}/`);
+  await waitFor(async () => await evaluate('document.querySelectorAll(".stat-card")[0]?.querySelector(".stat-value")?.innerText === "2" && document.querySelectorAll(".stat-card")[1]?.querySelector(".stat-value")?.innerText === "50%" && document.querySelector(".sidebar-profile-label")?.innerText === "p1-browser-learner"'), 'Desktop home did not show restored practice statistics and account identity.');
+  await capture('1536x1024-home-real-practice-progress.png');
+  console.log('PASS browser exit/relogin restore, accurate progress statistics, and real mobile/desktop home layouts');
+
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await navigate(`${viteOrigin}/exams`);
   await waitFor(async () => (await bodyText()).includes('四级理论题库'), 'Exam settings did not load the selected bank.');
   const examText = await bodyText();
@@ -241,14 +358,26 @@ try {
   await capture('1536x1024-desktop-home-with-bank.png');
   console.log('PASS desktop dashboard renders bank metadata without changing its wide layout');
 
+  const countFormalData = () => Object.fromEntries(['practice_sessions', 'practice_attempts', 'favorites', 'mistake_states'].map(table => [table, Number(testDatabase.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count)]));
+  const formalDataBeforePreview = countFormalData();
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await navigate(`${viteOrigin}/practice/answer?type=single&preview=1`);
+  await waitFor(async () => (await evaluate('location.pathname === "/practice/answer"')) && (await bodyText()).includes('开发预览'), 'Development practice preview did not open.');
+  await clickAnswer('A');
+  await clickContaining('.question-footer button', '下一题');
+  await waitFor(async () => (await evaluate('location.pathname === "/practice/result"')) && (await bodyText()).includes('回答'), 'Development preview feedback did not render.');
+  assert.deepEqual(countFormalData(), formalDataBeforePreview, 'Development preview modified formal practice data.');
+  console.log('PASS simulated network failure stays unsubmitted; development preview leaves formal SQLite data unchanged');
+
   assert.deepEqual(consoleErrors, [], `Browser console/network errors: ${consoleErrors.join(' | ')}`);
-  console.log('P1 browser smoke passed.');
+  console.log('P2 browser smoke passed.');
 } catch (error) {
   failures.push(error instanceof Error ? error.message : String(error));
   for (const failure of failures) console.error(`FAIL ${failure}`);
   if (error instanceof Error) console.error(error.stack);
   process.exitCode = 1;
 } finally {
+  testDatabase?.close();
   if (socket?.readyState === WebSocket.OPEN) socket.close();
   await Promise.all(processes.map(stop));
   rmSync(profileDirectory, { recursive: true, force: true, maxRetries: 4, retryDelay: 100 });

@@ -12,9 +12,11 @@ import { Link } from 'react-router-dom';
 import StatCard from '../components/StatCard';
 import { useAuth } from '../auth/AuthContext';
 import { useBanks } from '../services/banks';
+import { useLearningProgress, type PracticeQuestionType } from '../services/practice';
+import { previewMode } from '../services/api';
 import { MobileDashboard } from './MobilePages';
 
-const masteryTypes = [
+const masteryTypes: Array<{ name: string; key: PracticeQuestionType; tone: string }> = [
   { name: '单选题', key: 'single', tone: 'mint' },
   { name: '多选题', key: 'multiple', tone: 'blue' },
   { name: '判断题', key: 'judgement', tone: 'purple' },
@@ -23,6 +25,8 @@ const masteryTypes = [
 export default function DashboardPage() {
   const { user } = useAuth();
   const { activeBank: bank, loading, error } = useBanks();
+  const { progress, loading: progressLoading, error: progressError } = useLearningProgress(bank?.id, user?.id);
+  const preview = previewMode();
   const rules = bank?.examRules;
   const examCount = rules ? rules.singleCount + rules.multipleCount + rules.judgementCount : null;
   const examScore = rules ? rules.singleCount * rules.singlePoints + rules.multipleCount * rules.multiplePoints + rules.judgementCount * rules.judgementPoints : null;
@@ -38,10 +42,10 @@ export default function DashboardPage() {
       </div>
 
       <section className="stat-grid" aria-label="学习数据概览">
-        <StatCard label="已学习题目" detail="连接服务端后显示" to="/practice" icon={IconBook} tone="mint" />
-        <StatCard label="整体正确率" detail="连接服务端后显示" to="/records" icon={IconChartBar} tone="blue" />
-        <StatCard label="待复习错题" detail="连接服务端后显示" to="/mistakes" icon={IconFileText} tone="red" />
-        <StatCard label="最近模拟成绩" detail="连接服务端后显示" to="/records" icon={IconTrophy} tone="amber" />
+        <StatCard label="已接触题目" value={preview ? '426' : progress ? String(progress.touchedCount) : progressLoading ? '…' : '—'} detail={progress ? `当前题库共 ${progress.questionCount} 题` : preview ? '开发预览数据' : progressError || '提交练习后统计'} to="/practice" icon={IconBook} tone="mint" />
+        <StatCard label="练习正确率" value={preview ? '82.6%' : progress?.accuracyRate === null || !progress ? '—' : `${progress.accuracyRate}%`} detail={progress ? `${progress.submissionCount} 次有效作答` : preview ? '开发预览数据' : progressError || '暂无正式答题记录'} to="/records" icon={IconChartBar} tone="blue" />
+        <StatCard label="待复习错题" value={preview ? '38' : progress ? String(progress.pendingMistakeCount) : progressLoading ? '…' : '—'} detail={progress ? '本题库需要复习' : preview ? '开发预览数据' : progressError || '错题记录来自正式作答'} to="/mistakes" icon={IconFileText} tone="red" />
+        <StatCard label="最近模拟成绩" value="—" detail="模拟考试统计将在 P3 接入" to="/records" icon={IconTrophy} tone="amber" />
       </section>
 
       <section className="dashboard-grid primary-grid" aria-label="学习入口">
@@ -50,15 +54,15 @@ export default function DashboardPage() {
             <span className="large-icon icon-tile blue"><IconBook size={31} stroke={1.8} /></span>
             <div className="heading-copy">
               <h2>继续练习</h2>
-              <p>顺序练习 · 按题库顺序逐题练习</p>
+            <p>{progress?.recentSessions[0]?.mode === 'sequential' ? '继续最近的顺序练习' : '顺序练习 · 按题库顺序逐题练习'}</p>
             </div>
             <span className="bank-chip">{bankLabel}</span>
           </div>
           <div className="progress-summary">
-            <span>练习进度将在连接服务端后显示</span>
-            <span className="unavailable-value">—</span>
+            <span>{progress ? `探索 ${progress.touchedCount} / ${progress.questionCount} 题 · 未作答 ${progress.unansweredCount} 题` : preview ? '开发预览 · 426 / 1283 题' : progressLoading ? '正在读取学习进度…' : '尚无正式练习记录'}</span>
+            <span className="unavailable-value">{progress ? `${progress.explorationRate ?? 0}%` : preview ? '33.2%' : '—'}</span>
           </div>
-          <div className="progress-track" role="img" aria-label="尚无练习进度"><span className="progress-fill mint-fill" /></div>
+          <div className="progress-track" role="img" aria-label="题库探索进度"><span className="progress-fill mint-fill" style={{ width: `${progress?.explorationRate ?? (preview ? 33.2 : 0)}%` }} /></div>
           <Link className="button button-primary button-wide" to="/practice">
             继续刷题 <IconChevronRight size={19} stroke={2} />
           </Link>
@@ -87,22 +91,22 @@ export default function DashboardPage() {
           <div className="section-heading">
             <div className="section-title">
               <span className="small-icon icon-tile blue"><IconChartBar size={20} stroke={1.9} /></span>
-              <h2>题型掌握情况</h2>
+              <h2>题型正确率</h2>
             </div>
             <Link className="text-link" to="/records">查看详情 <IconChevronRight size={16} /></Link>
           </div>
           <div className="mastery-list">
               {masteryTypes.map((item) => (
               <div className="mastery-row" key={item.name}>
-                <div className="mastery-label"><strong>{item.name}</strong><span>（共 {bank?.activeVersion?.typeCounts[item.key] ?? '—'} 题）</span></div>
-                <div className="progress-track mastery-track" role="img" aria-label={`${item.name}暂无掌握统计`}>
-                  <span className={`progress-fill ${item.tone}-fill`} />
+                <div className="mastery-label"><strong>{item.name}</strong><span>（共 {progress?.byType[item.key]?.questionCount ?? bank?.activeVersion?.typeCounts[item.key] ?? '—'} 题）</span></div>
+                <div className="progress-track mastery-track" role="img" aria-label={`${item.name}练习正确率`}>
+                  <span className={`progress-fill ${item.tone}-fill`} style={{ width: `${progress?.byType[item.key]?.accuracyRate ?? 0}%` }} />
                 </div>
-                <span className="mastery-value">—</span>
+                <span className="mastery-value">{progress?.byType[item.key]?.accuracyRate == null ? '—' : `${progress.byType[item.key].accuracyRate}%`}</span>
               </div>
             ))}
           </div>
-          <p className="card-footnote">{bank ? '题型题量来自当前服务端题库版本；掌握度待学习记录接入' : '当前没有可读取的题库版本；掌握度待学习记录接入'}</p>
+          <p className="card-footnote">{progress ? `正确率按正式作答次数计算。${progress.submissionCount} 次有效提交。` : progressError || (bank ? '题型题量来自当前版本；正式答题后显示正确率' : '当前没有可读取的题库版本')}</p>
         </article>
 
         <article className="card review-card">
@@ -116,17 +120,18 @@ export default function DashboardPage() {
           <div className="review-states">
             <div className="review-state review-pending">
               <span className="review-state-icon"><IconFileText size={22} stroke={1.8} /></span>
-              <span><small>待复习</small><strong>— <em>题</em></strong></span>
+              <span><small>待复习</small><strong>{progress?.pendingMistakeCount ?? '—'} <em>题</em></strong></span>
             </div>
             <div className="review-state review-learning">
               <span className="review-state-icon"><IconClockHour4 size={22} stroke={1.8} /></span>
-              <span><small>巩固中</small><strong>— <em>题</em></strong></span>
+              <span><small>连续复习</small><strong>— <em>题</em></strong></span>
             </div>
             <div className="review-state review-mastered">
               <span className="review-state-icon"><IconCircleCheck size={22} stroke={1.8} /></span>
-              <span><small>已掌握</small><strong>— <em>题</em></strong></span>
+              <span><small>掌握状态</small><strong>— <em>P4</em></strong></span>
             </div>
           </div>
+          <p className="card-footnote">{progress ? `已收藏 ${progress.favoriteCount} 题 · 待复习 ${progress.pendingMistakeCount} 题` : preview ? '开发预览数据' : progressError || '收藏和错题统计在登录后读取'}</p>
           <Link className="button button-primary button-wide" to="/mistakes">开始复习 <IconChevronRight size={19} stroke={2} /></Link>
         </article>
       </section>
@@ -139,27 +144,22 @@ export default function DashboardPage() {
           </div>
           <Link className="text-link" to="/records">查看更多 <IconChevronRight size={16} /></Link>
         </div>
-        <div className="table-scroll">
+          <div className="table-scroll">
           <table>
             <thead>
               <tr><th>时间</th><th>练习模式</th><th>题目数量</th><th>正确率</th><th>操作</th></tr>
             </thead>
-            <tbody>
-              <tr>
-                <td colSpan={5}>
-                  <div className="table-empty">
-                    <span>暂无练习记录</span>
-                    <small>连接本地服务端后，这里会显示真实的练习历史。</small>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
+            <tbody>{progress?.recentSessions.length ? progress.recentSessions.map(session => {
+              const modeLabels: Record<string, string> = { sequential: '顺序练习', random: '随机练习', single: '单选专项', multiple: '多选专项', judgement: '判断专项', unanswered: '未做练习', favorites: '收藏练习', mistakes: '错题专项' };
+              const rate = session.attempts ? `${Math.round(session.correctCount / session.attempts * 1000) / 10}%` : '—';
+              return <tr key={session.id}><td>{new Date(session.updatedAt).toLocaleString('zh-CN')}</td><td>{modeLabels[session.mode] ?? session.mode}</td><td>{session.submittedCount} / {session.questionCount}</td><td>{rate}</td><td><Link to={`/practice/answer?session=${session.id}`}>继续</Link></td></tr>;
+            }) : <tr><td colSpan={5}><div className="table-empty"><span>{progressLoading ? '正在读取练习记录…' : progress ? '暂无练习记录' : progressError || '登录并选择题库后显示真实学习记录。'}</span><small>这里只显示服务端保存的正式练习数据。</small></div></td></tr>}</tbody>
           </table>
         </div>
       </section>
     </main>
     </div>
-    <MobileDashboard />
+    <MobileDashboard progress={progress} progressLoading={progressLoading} progressError={progressError} />
     </>
   );
 }

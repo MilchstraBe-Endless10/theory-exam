@@ -10,6 +10,7 @@ import {
   IconUserFilled,
 } from '@tabler/icons-react';
 import { NavLink } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
 
 const links = [
   { to: '/', label: '概览', icon: IconHomeFilled, end: true },
@@ -21,6 +22,8 @@ const links = [
 ];
 
 export default function Sidebar() {
+  const { user } = useAuth();
+
   return (
     <aside className="sidebar">
       <NavLink className="brand" to="/" aria-label="理论考试学习空间首页">
@@ -42,7 +45,7 @@ export default function Sidebar() {
 
       <NavLink to="/me" className="sidebar-profile">
         <span className="avatar"><IconUserFilled size={25} /></span>
-        <span className="sidebar-profile-label">未登录</span>
+        <span className="sidebar-profile-label">{user?.username ?? '未登录'}</span>
         <IconChevronRight className="profile-chevron" size={19} stroke={1.8} />
       </NavLink>
     </aside>

@@ -194,4 +194,38 @@ export const migrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 2,
+    name: 'persistent_practice_sessions_and_attempt_links',
+    sql: `
+      CREATE TABLE practice_sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+        bank_id TEXT NOT NULL REFERENCES question_banks(id) ON DELETE RESTRICT,
+        bank_version_id TEXT NOT NULL REFERENCES bank_versions(id) ON DELETE RESTRICT,
+        mode TEXT NOT NULL CHECK (mode IN ('sequential', 'random', 'single', 'multiple', 'judgement', 'unanswered', 'favorites', 'mistakes')),
+        current_position INTEGER NOT NULL DEFAULT 1 CHECK (current_position > 0),
+        question_count INTEGER NOT NULL CHECK (question_count > 0),
+        submitted_count INTEGER NOT NULL DEFAULT 0 CHECK (submitted_count >= 0),
+        status TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'completed', 'exited')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX practice_sessions_user_bank_idx ON practice_sessions(user_id, bank_id, updated_at DESC);
+
+      CREATE TABLE practice_session_questions (
+        practice_session_id TEXT NOT NULL REFERENCES practice_sessions(id) ON DELETE RESTRICT,
+        position INTEGER NOT NULL CHECK (position > 0),
+        question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE RESTRICT,
+        PRIMARY KEY (practice_session_id, position),
+        UNIQUE (practice_session_id, question_id)
+      );
+
+      ALTER TABLE practice_attempts ADD COLUMN practice_session_id TEXT REFERENCES practice_sessions(id) ON DELETE RESTRICT;
+      CREATE UNIQUE INDEX practice_attempts_session_question_idx
+        ON practice_attempts(practice_session_id, question_id) WHERE practice_session_id IS NOT NULL;
+      CREATE INDEX favorites_user_bank_idx ON favorites(user_id, bank_id, bank_version_id);
+      CREATE INDEX mistakes_user_bank_version_idx ON mistake_states(user_id, bank_id, bank_version_id, mastery_status);
+    `,
+  },
 ];

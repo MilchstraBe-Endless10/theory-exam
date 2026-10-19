@@ -3,14 +3,13 @@
 > 这是交接快照，不是聊天记录。每轮结束替换为最新状态。
 
 - 日期：2026-10-19
-- 阶段：P1 服务端、认证、题库导入与管理 UI 已完成验收并同步；未进入 P2，等待用户明确授权。
-- 基线与提交：起始 `9a5696f655319c5328c7a328f4397e39ab7d0452`；P1 阶段提交 `dcfd377bf9ce29324a58925dba760c0a9c1fd676`，<https://github.com/MilchstraBe-Endless10/theory-exam/commit/dcfd377bf9ce29324a58925dba760c0a9c1fd676>。推送后本地 `HEAD`、`origin/main`、`git ls-remote` 和 GitHub `main` SHA 一致；仓库仍为 Private。
-- 本轮改动：新增 `apps/server/`（Fastify、TypeScript、SQLite 迁移、认证、管理与导入接口、隔离测试、真实 Excel 验证脚本、浏览器流程脚本）；新增 `apps/mobile/src/auth/`、`src/services/`、本机 `AdminPage`；将正式桌面/手机首页、练习题量和考试设置改为读取 `/api/banks`，保留开发 `?preview=1` 隔离夹具；更新 UI smoke、`docs/API.md`、`docs/DECISIONS.md`、`docs/ROADMAP.md`、本文件和 `memory/MID_TERM.md`。`memory/LONG_TERM.md` 保持不变。
-- 真实题库验收：隔离临时数据库读取 `local-input/四级理论试题.xlsx`；`客观题`工作表共 1,283 题（单选 845、多选 38、判断 400），缺失答案 0、格式错误 0、重复题干组 64（保留涉及的 129 道题）；相同 SHA-256 文件重导被识别；关闭并重开数据库仍读到 1,283 题。测试临时库已清理，原始题库未改动。
-- 测试：移动端 `npm run typecheck`、`npm run build`、`npm run test` 均通过；UI smoke 13 项，含 390×844、360×800 页面检查/导航、题目交互、Preview 隔离、管理员页面控制台无错误、1536×1024 桌面回归。服务端 `npm run typecheck`、`npm run build`、`npm run test` 通过（9 项）；`npm run verify:local-import` 通过。两项目 `npm audit --audit-level=moderate` 均为 0 漏洞。
-- 浏览器流程（Chromium）通过管理员首次初始化、创建普通用户、上传真实 Excel 并确认导入、手机健康检查、普通用户登录、题库 API 动态渲染和考试规则展示；无题库首页不展示硬编码的 845/38/400、180/90 和四级名称。生产构建检查 `/api/health`、`/admin` 为 200，未认证 `/api/banks` 为 401。
-- 截图：最终完整浏览器组在 `/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/图片与设计/理论考试练习系统/P1-服务端浏览器验收-r4-20261019/`，含 `1536x1024-desktop-home-empty.png`、`1536x1024-desktop-home-with-bank.png`、`390x844-ordinary-user-login.png`、`390x844-exam-settings-from-server.png` 和 `admin-import-success.png`。r1-r3 是前几轮断言修正时的部分截图，最终以 r4 为完整通过证据。
-- 服务运行：生产构建服务正在 `127.0.0.1:3000` 运行，仅监听回环；管理页 `/admin`。使用默认数据目录 `~/.local/share/theory-exam/`；既有 DB 迁移状态 1/1，保留账号/题库内容。用户原有 Vite `127.0.0.1:5173` 保持运行。用 `cd apps/server && npm run start` 可启动；用 `npm run dev` 开发。
-- Git 安全：`.gitignore` 排除 `local-input/`、`.xlsx`、数据库/WAL、`node_modules/`、`dist/`、`.env`、账号数据、日志、密钥、证书和 frp 配置；P1 提交未包含这些内容。浏览器集成测试密码运行时随机生成，使用隔离临时数据库。
-- Git 同步：阶段提交 `feat(p1): add local server auth and Excel import` 已普通推送；GitHub 远端树核实包含服务端、认证测试、客户端题库读取服务与 `docs/API.md`。仓库保持 Private，无强推、无 Release。
-- 下一步：停止本轮工作并等待用户批准 P2；不要自行开始练习业务。
+- 阶段：P2 日常练习本地开发和验收完成；自动 Commit/Push 与 GitHub 远端 SHA 核验待本轮收尾。同步后暂停，等待 P3 授权。
+- 基线：开始前 `main` 与 `origin/main` 同步于 `291d8b992c43bdc765226ce5e43e8a4e0fb3fa65`。当前开发分支 `main`。开发过程中没有改动、停止或迁移既有真实 SQLite 数据库/运行服务；浏览器流程使用临时隔离数据库。
+- P2 变更：新增 V2 迁移、`apps/server/src/services/practice-service.ts`、`apps/server/src/routes/practice-routes.ts` 和 `apps/mobile/src/services/practice.ts`；在 `MobilePages.tsx` / `DashboardPage.tsx` 接入真实练习、答题反馈、恢复、收藏和统计；更新共享响应式样式、认证侧栏用户名、浏览器 smoke、服务端隔离测试、`docs/API.md`、`docs/DECISIONS.md`、`docs/ROADMAP.md` 与本文件及中期记忆。未修改 `memory/LONG_TERM.md`。
+- API：`/api/practice/sessions` 创建/查询/续接/切题/提交/读取反馈；`/api/favorites` 管理个人收藏；`/api/progress` 统计当前题库真实数据。提交前没有答案字段；服务端事务判分并保存作答及错误状态；重试幂等。题库版本固定到会话，账号间会话、答案和收藏隔离。
+- 自动测试：服务端 `npm run typecheck`、`npm run build`、`npm run test` 通过（18 项）；移动端 `npm run typecheck`、`npm run build`、`npm run test` 通过（Chromium UI smoke 13 项）。
+- 浏览器端到端：`cd apps/server && npm run test:browser` 通过。管理 UI 真实读取本机 Excel 并导入到临时 DB，验得 1,283 道（845/38/400）；普通用户登录，答对/答错，模拟网络失败后未产生答案记录并成功重试，退出重登后统计恢复为 2 题已接触、50% 正确率、1 道待复习。开发 `?preview=1` 前后正式数据库行数不变。临时服务和临时 DB 已由脚本清理。
+- 视觉截图（18 张）：AI 产出目录 `图片与设计/理论考试练习系统/P2-真实刷题浏览器验收-r12-20261019/`。关键页面覆盖 390×844、360×800、1536×1024。修复浏览器验收的 CDP DOM 断言错误、React 异步等待竞争，以及桌面反馈样式和侧栏登录身份展示；最终真实截图通过。
+- 安全/范围：`.gitignore` 忽略 `local-input/`、Excel、数据库及 WAL、`.env`、账号数据、日志、证书、密钥和 frp 配置；测试没有读取或导出生产账号/题库。四级考试规则未变。完整跨轮次错题掌握状态机留给 P4；P2 没有开发模拟考试组卷、计时/评分、frp 公网或 APK。
+- 已记录待办：ADR-014；P5 接入 frpc 前隔离管理监听入口并验证公网转发不可访问管理界面/API。当前不开放公网。
+- Git 下一步：复查 `git fetch origin`、分支关系、`git diff --check` 与暂存文件敏感性；验证全部通过后使用普通提交与 push，查询 GitHub `main` SHA 并将提交 URL/同步结果补录到 `memory/MID_TERM.md` 和本文件。不得强推、公开仓库或发布 Release。

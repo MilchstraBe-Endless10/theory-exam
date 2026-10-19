@@ -5,18 +5,19 @@ import { Link } from 'react-router-dom';
 type StatCardProps = {
   label: string;
   detail: string;
+  value?: string;
   to: string;
   icon: TablerIcon;
   tone: 'mint' | 'blue' | 'red' | 'amber';
 };
 
-export default function StatCard({ label, detail, to, icon: Icon, tone }: StatCardProps) {
+export default function StatCard({ label, detail, value = '—', to, icon: Icon, tone }: StatCardProps) {
   return (
     <Link className="stat-card card" to={to}>
       <span className={`stat-icon icon-tile ${tone}`}><Icon size={29} stroke={1.8} /></span>
       <span className="stat-copy">
         <span className="stat-label">{label}</span>
-        <strong className="stat-value">—</strong>
+        <strong className="stat-value">{value}</strong>
         <span className="stat-detail">{detail}</span>
       </span>
       <IconChevronRight className="stat-arrow" size={19} stroke={1.7} />
