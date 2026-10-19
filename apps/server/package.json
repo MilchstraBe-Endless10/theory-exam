@@ -8,10 +8,13 @@
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "web:dev": "tsx src/web-server.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
+    "web:start": "node dist/web-server.js",
     "test": "tsx --test test/*.test.ts",
     "test:browser": "node scripts/browser-flow-smoke.mjs",
+    "test:web:browser": "node scripts/web-entry-browser-smoke.mjs",
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx src/cli.ts migrate",
     "db:status": "tsx src/cli.ts status",

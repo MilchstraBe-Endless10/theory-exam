@@ -11,7 +11,7 @@ import {
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { useBanks } from '../services/banks';
-import { ApiError, apiRequest, clearSession, persistentSession, previewMode, savedServerAddress, saveServerAddress, saveSession, type ApiSession } from '../services/api';
+import { ApiError, apiRequest, clearSession, persistentSession, previewMode, savedServerAddress, saveServerAddress, saveSession, usesSameOriginWebApi, type ApiSession } from '../services/api';
 import {
   createPracticeSession, exitPracticeSession, getActivePracticeSession, getFavorites, getPracticeQuestion,
   getPracticeResult, getPracticeSession, movePracticePosition, resumePracticeSession, setQuestionFavorite,
@@ -192,6 +192,7 @@ export function ConnectPage() {
     setConnecting(true);
     try {
       const normalized = new URL(address.trim()).toString().replace(/\/+$/, '');
+      if (usesSameOriginWebApi() && normalized !== window.location.origin) throw new ApiError('网页端使用当前站点的同源学习服务，不能切换到其他服务器地址。', 'SAME_ORIGIN_REQUIRED');
       const health = await apiRequest<{ status: string; database: { status: string } }>('/api/health', { base: normalized, auth: false, timeoutMs: 5000 });
       if (health.status !== 'ok' || health.database?.status !== 'ok') throw new ApiError('服务器健康检查未通过。', 'HEALTH_CHECK_FAILED');
       saveServerAddress(normalized);

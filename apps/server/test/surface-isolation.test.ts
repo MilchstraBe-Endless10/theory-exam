@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createServer, request as httpRequest, type Server } from 'node:http';
+import type { Server } from 'node:http';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
@@ -8,6 +8,8 @@ import { after, test } from 'node:test';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { openMigratedDatabase } from '../src/db/database.js';
+import { hashPassword } from '../src/security.js';
+import { createWebGateway } from '../src/web-gateway.js';
 
 const directory = mkdtempSync(join(tmpdir(), 'theory-surface-isolation-'));
 let businessApp: Awaited<ReturnType<typeof buildApp>> | undefined;
@@ -47,29 +49,25 @@ test('loopback-forwarded learning listener cannot reach management routes or pag
     ADMIN_PORT: '3001',
   });
   db = openMigratedDatabase(databasePath);
+  const sharedUserId = 'isolated-shared-user';
+  const sharedPasswordHash = await hashPassword('web-test-password-only');
+  db.prepare(`INSERT INTO users(id, username, password_hash, role, disabled, created_at, updated_at, must_change_password, is_test_account)
+    VALUES (?, 'shared-user', ?, 'user', 0, ?, ?, 0, 1)`).run(sharedUserId, sharedPasswordHash, new Date().toISOString(), new Date().toISOString());
   businessApp = await buildApp({ config, database: db, staticDir, surface: 'business', logger: false });
   adminApp = await buildApp({ config: { ...config, host: '127.0.0.1', port: 3001 }, database: db, staticDir, surface: 'admin', logger: false });
   const businessAddress = await businessApp.listen({ host: '127.0.0.1', port: 0 });
   const businessPort = Number(new URL(businessAddress).port);
   const adminAddress = await adminApp.listen({ host: '127.0.0.1', port: 0 });
 
-  proxy = createServer((incoming, outgoing) => {
-    const upstream = httpRequest({
-      hostname: '127.0.0.1',
-      port: businessPort,
-      path: incoming.url,
-      method: incoming.method,
-      headers: { ...incoming.headers, host: `127.0.0.1:${businessPort}` },
-    }, response => {
-      outgoing.writeHead(response.statusCode ?? 502, response.headers);
-      response.pipe(outgoing);
-    });
-    upstream.on('error', () => { outgoing.statusCode = 502; outgoing.end(); });
-    incoming.pipe(upstream);
-  });
+  proxy = createWebGateway({ staticDir, apiTarget: `http://127.0.0.1:${businessPort}` });
   const proxyPort = await listen(proxy);
   const proxyBase = `http://127.0.0.1:${proxyPort}`;
+  config.corsOrigins.add(proxyBase);
 
+  const directAdminPage = await fetch(`${businessAddress}/admin`);
+  assert.equal(directAdminPage.status, 404);
+  const directAdminApi = await fetch(`${businessAddress}/api/admin/status`);
+  assert.equal(directAdminApi.status, 404);
   const adminPageThroughProxy = await fetch(`${proxyBase}/admin`, { headers: { 'X-Forwarded-For': '198.51.100.40' } });
   assert.equal(adminPageThroughProxy.status, 404);
   const adminStatusThroughProxy = await fetch(`${proxyBase}/api/admin/status`, { headers: { 'X-Forwarded-For': '198.51.100.40' } });
@@ -97,4 +95,40 @@ test('loopback-forwarded learning listener cannot reach management routes or pag
 
   const managementRouteThroughProxy = await fetch(`${proxyBase}/api/admin/status`, { headers: { Authorization: `Bearer ${bootstrapResult.token}`, 'X-Forwarded-For': '198.51.100.40' } });
   assert.equal(managementRouteThroughProxy.status, 404);
+  for (const path of ['/api/Admin/status', '/api/%61dmin/status', '/%61dmin', '/api/auth/%2e%2e/admin/bootstrap', '/api//admin/status']) {
+    assert.equal((await fetch(`${proxyBase}${path}`)).status, 404, `gateway accepted blocked path ${path}`);
+  }
+  assert.equal((await fetch(`${proxyBase}/api/health`)).status, 200);
+
+  const webLogin = await fetch(`${proxyBase}/api/auth/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: proxyBase },
+    body: JSON.stringify({ username: 'shared-user', password: 'web-test-password-only', remember: true }),
+  });
+  assert.equal(webLogin.status, 200);
+  const webSession = await webLogin.json() as { user: { id: string }; csrfToken: string };
+  assert.equal('token' in webSession, false);
+  const webCookie = (webLogin.headers.get('set-cookie') ?? '').split(';', 1)[0]!;
+  assert.match(webLogin.headers.get('set-cookie') ?? '', /HttpOnly; Path=\/; SameSite=Strict/);
+  const webMe = await fetch(`${proxyBase}/api/auth/me`, { headers: { cookie: webCookie, origin: proxyBase } });
+  assert.equal((await webMe.json() as { id: string }).id, sharedUserId);
+  const csrfBlocked = await fetch(`${proxyBase}/api/auth/renew`, {
+    method: 'POST', headers: { cookie: webCookie, origin: 'http://attacker.invalid', 'x-csrf-token': webSession.csrfToken, 'content-type': 'application/json' }, body: '{}',
+  });
+  assert.equal(csrfBlocked.status, 403);
+  const browserMutation = await fetch(`${proxyBase}/api/auth/renew`, {
+    method: 'POST', headers: { cookie: webCookie, origin: proxyBase, 'x-csrf-token': webSession.csrfToken, 'content-type': 'application/json' }, body: '{}',
+  });
+  assert.equal(browserMutation.status, 200);
+
+  const androidLogin = await fetch(`${businessAddress}/api/auth/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://localhost' },
+    body: JSON.stringify({ username: 'shared-user', password: 'web-test-password-only', remember: true }),
+  });
+  const androidSession = await androidLogin.json() as { user: { id: string }; token: string };
+  assert.equal(androidLogin.status, 200);
+  assert.ok(androidSession.token);
+  const androidMe = await fetch(`${businessAddress}/api/auth/me`, { headers: { authorization: `Bearer ${androidSession.token}` } });
+  assert.equal((await androidMe.json() as { id: string }).id, webSession.user.id);
+  assert.equal(webSession.user.id, sharedUserId);
+  assert.equal(Number((db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(sharedUserId) as { count: number }).count), 2);
 });

@@ -43,7 +43,12 @@ export function previewMode(search = window.location.search): boolean {
   return import.meta.env.DEV && new URLSearchParams(search).get('preview') === '1';
 }
 
+export function usesSameOriginWebApi(): boolean {
+  return typeof window !== 'undefined' && !import.meta.env.DEV && !Capacitor.isNativePlatform();
+}
+
 export function savedServerAddress(): string {
+  if (usesSameOriginWebApi()) return window.location.origin;
   return localStorage.getItem(SERVER_KEY) ?? '';
 }
 
@@ -54,6 +59,7 @@ export function adminApiBase(): string {
 
 export function saveServerAddress(value: string): void {
   const normalized = value.trim().replace(/\/+$/, '');
+  if (usesSameOriginWebApi() && normalized !== window.location.origin) throw new ApiError('网页端只能使用当前站点的同源学习服务。', 'SAME_ORIGIN_REQUIRED');
   if (normalized !== savedServerAddress()) clearSession();
   localStorage.setItem(SERVER_KEY, normalized);
   window.dispatchEvent(new Event(serverEvent));
@@ -115,7 +121,7 @@ export async function apiRequest<T>(
   options: { method?: string; body?: unknown; headers?: HeadersInit; base?: string; auth?: boolean; timeoutMs?: number } = {},
 ): Promise<T> {
   if (previewMode()) throw new ApiError('开发预览不会访问或修改正式服务端数据。', 'PREVIEW_ISOLATED');
-  const base = (options.base ?? savedServerAddress() ?? '').replace(/\/+$/, '');
+  const base = (options.base ?? savedServerAddress()).replace(/\/+$/, '');
   if (!base) throw new ApiError('请先连接服务器。', 'SERVER_NOT_CONFIGURED');
   const headers = new Headers(options.headers);
   const native = Capacitor.isNativePlatform();

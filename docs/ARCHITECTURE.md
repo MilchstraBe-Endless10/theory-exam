@@ -6,12 +6,31 @@
 - 不要因为未来多题库而增加微服务、Kafka、Redis、外部云认证、云数据库。
 
 ## 局域网 / frp 双通道
-`Android App → (局域网 HTTPS | 公网 HTTPS → 现有 frps → frpc) → 本机业务后端 → 本地 SQLite`。
+目标拓扑（尚未部署）：`Android App → (局域网 HTTPS | MeFrp TCP → 本机 HTTPS 业务后端) → 本地 SQLite`；浏览器走独立入口：`Browser HTTPS → MeFrp TCP → Web Gateway :8080 → loopback Business API → 同一 SQLite`。
 - 用户现有 frp 是外网方案；不要安装第二种穿透。
-- V1.0 保持稳定外网 HTTPS 地址、本地地址或统一域名配置，首次绑定须校验服务端身份。现有 frp 的公网主机、绑定端口、转发模式、TLS 终止位置均未知，由部署阶段实测填写，不得杜撰。
+- 当前 MeFrp 两条 TCP 隧道已创建但均离线：`theory-exam` → `127.0.0.1:3000`、`theory-exam-web` → `127.0.0.1:8080`。TCP 只转发字节，不提供浏览器/APP 端到端 TLS。未授权启动，且本机 3000 仍是旧 P4/V4 服务，禁止直接映射。
+- `apps/server/src/web-server.ts` 独立提供生产 Web listener，默认只绑定 loopback `127.0.0.1:8080`，读取 `apps/mobile/dist`，同源代理白名单业务 `/api/*` 到 loopback Fastify；不代理 `/admin`、`/api/admin/*`、bootstrap 或未知 API。生产模式必须提供可信 TLS cert/key，否则启动失败。Vite 5173 仅供开发。
+- 手机 API 与网页代理继续连接同一 Fastify business listener 和同一配置 SQLite；管理 listener `127.0.0.1:3001` 不映射。网关不相信或转发客户端 `X-Forwarded-*`，Fastify `trustProxy=false`，用户身份仍取自服务端会话。
+- Web 正式构建在非开发浏览器环境固定使用当前 `location.origin` 的同源 API 与 HttpOnly Cookie；Android Capacitor 仍连接用户配置的 API 地址并用原生安全存储/Bearer。考试答案沿用服务器逐题版本与 requestId 冲突处理，网关透明传递这些请求头与 Cookie。
+- V1.0 必须保持可信 HTTPS 地址、正确证书链、主机名验证和证书错误拒绝。普通浏览器不读取 Android APP 的私有 trust anchor；未知私有 CA 会产生浏览器证书错误，不能要求绕过。由于没有自有域名，候选为用户注册的免费可控 DNS 子域名 + DNS-01 公信证书 + MeFrp TCP TLS 透传；具体服务商、DNS API、解析及证书续期仍待选定与实测。
+- Let’s Encrypt 已提供 IP 证书，但必须用 HTTP-01（80）或 TLS-ALPN-01（443）证明 IP 控制，且有效期约 160 小时；MeFrp 分配的节点 IP 与高位 TCP 隧道端口不满足可控性/验证条件，不能据此作为当前方案。DNS-01 可通过 TXT 证明域名控制，不依赖入站验证端口；公开网页需访问 `https://<受信域名>:<MeFrp分配端口>`，证书 SAN 匹配域名。DNS API 凭据须最小权限并存于源码库外。
 - 推荐同域名内外网分流；若本地 DNS 不支持，则维护局域网/公网两个可验证端点并在 APP 中自动回退。切换网络不改变用户会话、考试 ID、考试截止时间。
 - 管理 API 由服务端严格限制为本机回环/可信本机管理入口，不因普通用户路由在公网暴露而可调用。
 - 默认不启用不受信任的自签名证书忽略验证，也不允许直接公开 HTTP 密码登录接口。
+
+### Web Gateway 启动
+先在对应工程执行 `npm --prefix apps/mobile run build` 与 `npm --prefix apps/server run build`。通过用户授权的正式 HTTPS/DNS 配置后，Web listener 使用：
+
+```bash
+NODE_ENV=production \
+WEB_HOST=127.0.0.1 WEB_PORT=8080 \
+WEB_API_TARGET=http://127.0.0.1:3000 \
+WEB_TLS_CERT_FILE=/absolute/path/outside-repository/fullchain.pem \
+WEB_TLS_KEY_FILE=/absolute/path/outside-repository/privkey.pem \
+npm --prefix apps/server run web:start
+```
+
+证书与私钥必须是真实、未过期、主机名匹配且受普通浏览器信任的证书；不能将占位路径直接执行。业务 Fastify 的 `CORS_ORIGINS` 还需配置为浏览器实际 Origin（包含 HTTPS scheme 与 MeFrp 端口）。该命令只描述未来独立 Web listener，不启动隧道、不改当前旧 3000，也不执行正式库迁移。生产部署前仍需解决手机 API listener 的 TLS，并经 P5-B 授权。
 
 ## 服务器权威考试状态机
 `CREATED → IN_PROGRESS → SUBMITTED / EXPIRED / VOIDED`（VOIDED 为管理员审计型异常处理，不直接删除）。

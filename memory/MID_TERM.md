@@ -3,7 +3,7 @@
 更新时间：2026-10-19（P5-A 隔离验收进行中；Android 构建受环境阻塞）
 
 ## 当前阶段
-**P0、P0-M、P1、P2、P2-R、P3、P4 均已完成验收并同步至私有 GitHub。P5-A 的服务端/浏览器/备份与安全代码已隔离验证，但当前机器无 JDK、Android SDK、Gradle 或 adb，APK 构建和安装验收未完成；不得标记 P5-A 完成，也未开始 P5-B。正式 SQLite 保持 V4，Issue #3/#7 继续打开。**
+**P0、P0-M、P1、P2、P2-R、P3、P4 均已完成验收并同步至私有 GitHub。P5-A 的服务端/浏览器/备份与安全代码已隔离验证；新增 8080 生产 Web Gateway、同源 Cookie/CSRF、双入口管理 API 拒绝与 Chromium 验收通过。当前机器仍无 JDK、Android SDK、Gradle 或 adb，APK 构建和安装验收未完成；不得标记 P5-A 完成，也未开始 P5-B。正式 SQLite 保持 V4，MeFrp 双隧道离线，Issue #3/#7 继续打开。**
 
 ## Git 开发流程（长期约束）
 - 正式仓库：`https://github.com/MilchstraBe-Endless10/theory-exam`，保持 Private。每次开发开始前检查工作区/分支/远端并 fetch；阶段验证通过后默认普通提交、推送并核验远端 SHA。
@@ -33,6 +33,8 @@
 - P1 使用 `local-input/四级理论试题.xlsx` 做真实导入验收；确保原始文件 gitignored。
 - P0-M 已按 `design/reference/mobile-12-screens-v1.png` 完成 12 个手机页面；390×844 与 360×800 的逐页截图和检查见验收记录。示例数据不能作真实后端数据。
 - P3 不能依赖客户端时间判分；P5 不能将公网维护接口暴露。
+- P5 双入口目标：Android API `theory-exam → 127.0.0.1:3000`、浏览器生产 Web `theory-exam-web → 127.0.0.1:8080`。两隧道未启动，当前 3000 仍为旧 P4/V4 服务。新 8080 入口只服务 mobile production dist 和 allowlist business API，不能访问 `/admin`、`/api/admin/*` 或 bootstrap。
+- 当前没有自有域名/受信证书；普通浏览器不继承 Android Network Security Configuration 的私有信任锚。TLS 候选为免费可控 DNS 子域名 + DNS-01 公信证书 + MeFrp TCP TLS 透传，需用户选择 DNS 服务并验证 API/续期。禁止忽略证书错误；手机 API TLS listener 尚未部署。
 
 ## P3 本地验收记录（2026-10-19）
 - 从 P3 基线 05a2225af20f70c6ac9eacec6d04f9f90f1fed66 开始开发。V4 迁移仅新增逐题答案版本、标记、幂等写入键、成绩分项/完整复盘及考试历史索引；V1–V3 未改写。组卷绑定活动题库版本和规则，按单选/多选/判断分区随机抽题，保存唯一题目快照、分值、答案、开始和截止时间；每用户只允许一场进行中考试。
@@ -128,3 +130,14 @@
 - 环境：Omarchy 4.0.4、Node v26.8.2、npm 11.19.1；无 Java/JDK、Android SDK、Gradle、Android Studio、adb、模拟器。`npm run android:debug` 中 web build 与 `cap sync android` 成功，Gradle 在启动前以 `JAVA_HOME is not set` 失败；无 APK 构建或安装证据，因此 P5-A 不打勾。
 - GitHub：P5-A 实现提交 `be07b283359fea856ef2ff877a5c95da210839db`、Android 模板测试包名修正 `40abf0beb37d3b3a2b6abec27630972a9f455f1a`、APK FileProvider 收窄到专用缓存目录 `b9e404279c9aa74787e58a8939e9b5c1cbcacda6` 均普通推送到 `feat/p5-a-android-security` 并经远端 SHA 核验；`main` 保持在起始基线。仓库仍为 Private。中短期记忆同步另有 docs commit。
 - 运行库只读观察：`127.0.0.1:3000/api/health` 返回 `migrationVersion: 4`；`db:status` 返回 `migration_pending`（V4→V6，exit 1 是待迁移状态信号），未更改 DB。`127.0.0.1:3001` 无 listener。`theory-exam.service`、`frpc.service`、`frps.service` inactive，frpc/frps 进程不存在。P5-A 等待具备 Android 工具链的构建/安装验证；P5-B 还需用户确认实际 systemd、V4→V6、可信 HTTPS 与 frp 变更方案。
+
+## P5-A 双入口 Web 补充验收（2026-10-19；P5-A 仍未完成）
+- 本轮在 `feat/p5-a-android-security`（开始时 `a791adc6fcdcf519e160098f07a42686cfc606e0`、工作区干净）新增 Node 标准库生产 Web Gateway：loopback `127.0.0.1:8080`、提供 `apps/mobile/dist`、React SPA 刷新、hashed asset immutable cache、index no-cache、文件/未知 API 404、CSP 与安全响应头。生产模式没有可信 TLS cert/key 时拒绝启动；API target 限定 loopback HTTP(S) origin。
+- `/api/*` 仅代理 `/api/health`、认证、题库、练习、收藏、进度、考试、错题复习及更新业务路由。管理/bootstrap/未知 API/编码路径/点文件/不支持方法在 proxy 前拒绝，且不触发 SPA fallback。网关不转发 `Forwarded`、`X-Forwarded-*` 和 `X-Real-IP`，API 响应禁缓存。Fastify business surface 同样不注册管理页面或 API。
+- 非开发浏览器构建固定使用当前 origin；沿用 `HttpOnly; SameSite=Strict; Secure` Cookie（生产 API 强制 Secure）、CSRF token 与精确 Origin allowlist。Android Capacitor 继续走服务器地址和原生 secure-storage Bearer。隔离 SQLite 集成验证两种会话最终关联同一用户/DB，错误 Origin/缺 CSRF 的写操作被拒；浏览器响应不含 Bearer token。既有 P3 `expectedVersion`/`requestId` 考试答案冲突逻辑未改，服务端回归覆盖。
+- 安全隔离实测：业务 Fastify listener 与 Web Gateway 对 `/admin`、`/api/admin/*`、bootstrap 及大小写/编码/重复分隔变体均不可达（404）；故意会对管理路由回 200 的测试上游未收到任何管理路径。正式 3000 与真实数据库未接入测试。
+- 验证：`apps/server` typecheck/build 通过、**59/59** 测试通过；`apps/mobile` typecheck/build 通过、UI smoke **14/14**；`npm run test:web:browser` 用 production dist、隔离 SQLite 和 Chromium 验证同源登录、HttpOnly、无 token storage、CSRF 正反向、管理路径拒绝、`/practice` 刷新以及 390×844/1536×1024 无横向溢出。截图：`/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/图片与设计/理论考试练习系统/P5-A-Web入口浏览器验收-20261019/`。
+- 另以 `NODE_ENV=test WEB_HOST=127.0.0.1 WEB_PORT=8080 WEB_API_TARGET=http://127.0.0.1:3000 npm run web:dev` 启动正式 CLI 路径，`/` 与 `/practice` 均返回 200/no-cache，`/api/admin/status` 返回 404；随后停止测试进程。生产模式缺 cert/key 的拒绝启动也实际验证（预期 exit 1）。
+- TLS 研究：MeFrp TCP 高位端口本身不提供浏览器/APP 到本机 TLS。普通浏览器不会使用 Android APP 的私有信任锚，不能忽略证书警告。候选为免费可控 DNS 子域名 + DNS-01 公信证书 + TCP TLS 透传；Let’s Encrypt IP cert 有效约 160 小时并要求通过标准 80/443 验证 IP 控制，当前 MeFrp 分配 IP/高位端口不满足可控性。未选 DNS 服务、未申请证书；手机 API 3000 仍为旧 P4/V4 HTTP 进程，公网禁止开放。
+- 边界确认：正式库 V4/四个普通账号，没有迁移、密码、管理员、题库操作；当前旧 3000 与原 Vite preview 进程未被替换；Web fixture 只用临时 SQLite/API，已停止；8080 已释放。两条 MeFrp 隧道未启动，未改 systemd/证书/公网配置。
+- 下一步：P5-A 仍需在具备 Android JDK/SDK/adb 的主机完成 APK 构建/安装与原生网络/扫码/更新验证。P5-B 前必须提供具体 TLS/DNS 方案及包含回滚的旧 3000 服务升级、V4→V6 正式迁移和隧道变更清单并获得用户另行确认。

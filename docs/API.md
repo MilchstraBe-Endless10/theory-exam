@@ -90,6 +90,28 @@ Progress is calculated only from saved attempts for questions in the selected ac
 
 The desktop and mobile learning home read real progress and recent practice data; practice selection, question delivery, server grading, saved feedback, favorites, and session resume use the endpoints above. With no session or no enabled bank, the interface shows empty or connection states. Development `?preview=1` fixtures remain isolated from API calls and production builds.
 
+## Production Web ingress (P5-A)
+
+`apps/server/src/web-server.ts` is a separate production Web process, default `127.0.0.1:8080`. It serves the built `apps/mobile/dist` files; Vite `5173` is development-only. `GET`/`HEAD` extensionless routes fall back to `index.html` for React Router refreshes, `index.html` uses `no-cache`, Vite-hashed `/assets/*` use one-year immutable caching, and missing files/unknown APIs return 404. Responses include CSP (`connect-src 'self'`), frame/content/referrer/permissions protections; HSTS is added only when TLS is active.
+
+The gateway proxies only these business API roots: `/api/health`, `/api/auth/*`, `/api/banks`, `/api/practice/*`, `/api/favorites/*`, `/api/progress`, `/api/exams/*`, `/api/mistakes/*`, `/api/reviews/*`, and `/api/updates/*`. It rejects unknown API roots, any admin/bootstrap path, encoded paths, dot files, path separators/traversal variants and unsupported methods before proxying; blocked API responses never fall back to the SPA. `/admin`, `/api/admin/*`, and `/api/admin/bootstrap` are not reachable through this Web entrance. `WEB_API_TARGET` must be a loopback HTTP(S) origin without a path or credentials; client `Forwarded`/`X-Forwarded-*` headers are stripped. The separate Fastify learning listener likewise does not register management APIs/pages; the admin listener remains local-only and must not be mapped.
+
+Production non-native browser builds use `location.origin` for all API calls, `credentials: include`, and the HttpOnly `SameSite=Strict; Secure` session cookie. The Web page does not persist a Bearer token. Mutating cookie requests retain the browser Origin and session CSRF token through the gateway; the backend's `CORS_ORIGINS` must include the exact deployed browser origin (including HTTPS scheme and MeFrp port). Android continues to use its configured server address and native secure-storage Bearer token. Both clients reach the same Fastify business listener and configured SQLite file; exam answers keep the server's `expectedVersion`/`requestId` conflict and retry behavior.
+
+The Web process refuses `NODE_ENV=production` unless both `WEB_TLS_CERT_FILE` and `WEB_TLS_KEY_FILE` point to a trusted certificate/key pair. Build and later authorized launch commands:
+
+```bash
+npm --prefix apps/mobile run build
+npm --prefix apps/server run build
+NODE_ENV=production WEB_HOST=127.0.0.1 WEB_PORT=8080 \
+  WEB_API_TARGET=http://127.0.0.1:3000 \
+  WEB_TLS_CERT_FILE=/absolute/path/outside-repository/fullchain.pem \
+  WEB_TLS_KEY_FILE=/absolute/path/outside-repository/privkey.pem \
+  npm --prefix apps/server run web:start
+```
+
+This is a deployment template only: do not run it against the current old P4/V4 process or before P5-B approval. No certificate/domain is configured. A plain TCP MeFrp mapping is not TLS. With no owned domain, a free provider-controlled DNS name plus DNS-01 public certificate is a candidate, subject to provider/API/renewal verification. A private CA trusted by an Android app is not automatically trusted by ordinary desktop/mobile browsers; certificate warnings must never be bypassed. Let’s Encrypt IP certificates are short-lived (160 hours) and require proof through standard port 80 or 443, which is not available on the current provider-assigned high-port TCP entrance. The Android API entrance still requires a separately verified TLS listener before either tunnel is enabled.
+
 ## Mock exams
 
 Every exam endpoint below requires a non-expired, enabled user's session and is bound to the authenticated account. The client cannot supply `user_id`. A valid forced-password-change session is rejected by the existing `PASSWORD_CHANGE_REQUIRED` gate. Starting an exam snapshots the active bank version and its `exam_rules`; question order, question text/options/source, correct answer, points, start time, deadline, and rule values remain bound to that exam even after a bank revision.
