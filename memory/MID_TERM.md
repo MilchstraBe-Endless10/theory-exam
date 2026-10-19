@@ -3,7 +3,7 @@
 更新时间：2026-10-19（P2-R 账号与首次密码安全验收完成）
 
 ## 当前阶段
-**P0、P0-M、P1、P2、P2-R 均已完成本地验收；P2-R 代码与记忆待本轮推送核验。推送验证后按用户要求关闭 GitHub Issue #2，Issue #3 保持打开；暂停等待 P3 授权。**
+**P0、P0-M、P1、P2、P2-R 均已完成并同步到私有 GitHub。P2-R 提交 `518dbfdc6082396a79e1205421b7964d7b9ff2ff` 已验证；Issue #2 已按用户要求关闭，Issue #3 保持打开；暂停等待 P3 授权。**
 
 ## Git 开发流程（长期约束）
 - 正式仓库：`https://github.com/MilchstraBe-Endless10/theory-exam`，保持 Private。每次开发开始前检查工作区/分支/远端并 fetch；阶段验证通过后默认普通提交、推送并核验远端 SHA。
@@ -76,7 +76,7 @@
 - 既有运行态边界：只读检查发现 `127.0.0.1:3000/api/health` 返回 200，但 `/api/practice/sessions/active` 返回 404，说明常驻进程仍载入 P1 代码。本轮没有重启该服务、运行 V2 迁移或连接真实业务库，以遵守“不影响已运行服务和 SQLite”的要求。P2 浏览器 E2E 使用临时 Fastify 进程和隔离 SQLite 并导入本机真实 Excel。实际用户启用 P2 前需安排服务重启并应用非破坏性 V2 迁移；不得将当前 P1 运行进程描述为已提供 P2 API。
 
 ## P2-R 本地验收记录（2026-10-19）
-- 开发前 `main` 与 `origin/main` 同步于 `624154eec3155008af7a0f34ce50bdcdce99065b`；工作区的 P2-R 改动均来自本阶段。代码尚待本轮 commit/push 和 SHA 核验。
+- 开发前 `main` 与 `origin/main` 同步于 `624154eec3155008af7a0f34ce50bdcdce99065b`。P2-R 实现提交 `518dbfdc6082396a79e1205421b7964d7b9ff2ff` 已普通推送并验证本地 HEAD、`origin/main`、GitHub `main` SHA 一致；[GitHub Commit](https://github.com/MilchstraBe-Endless10/theory-exam/commit/518dbfdc6082396a79e1205421b7964d7b9ff2ff)。仓库仍为 Private。
 - 已读取 GitHub Issue #2/#3。Issue #2 的账号需求按最新用户确认执行：三个正式普通用户、一个长期保留的专用测试普通用户；测试标记不增加权限。Issue #3 保留尚未完成的 Web Cookie/CSRF/XSS、Android 安全存储、可信 HTTPS、frp 管理入口隔离、APK 更新验证等事项。
 - 常驻旧 P1 服务先通过 SQLite 在线备份接口创建 `0700/0600` 安全备份；备份 `integrity_check=ok`。备份时实际库为 V1，`users/question_banks/questions/practice_attempts` 均为 0。优雅停止旧进程后应用不可破坏的 V2/V3 迁移，当前 SQLite 完整性正常、版本 3，原有空数据集未丢失。
 - 通过本机 TTY CLI 创建四个 `user` 角色账户；全部初始密码互不相同，格式为 8 位随机英文字母 + `YYMMDD`，仅放入数据库外 `0700` 目录中的 `0600` 本机凭据文件。账号清单创建后已删除；凭据文件保留供本机管理员单独交付。数据库只存 Argon2id 编码哈希，四个账号都保持 `must_change_password=1`；唯一测试标记为 1。真实账号初始密码没有改写、输出到聊天/日志或加入仓库。
@@ -84,7 +84,7 @@
 - 隔离自动化 `apps/server`: 类型检查、构建通过；`npm run test` 25 项通过，涵盖 V3 保留既有用户、初始密码生成和冲突中止、独立 Argon2id 盐、首次改密旧密码/旧会话失效、不同账号隔离、普通用户管理权限、禁用/重置撤销会话、密码字段不入响应及日志脱敏。`apps/mobile`: 类型检查、构建通过；`npm run test` 13 项通过。
 - 真实 Chromium `npm run test:browser` 通过：临时 SQLite 中管理员创建普通用户、真实 Excel 预览/确认 1,283 题（845/38/400）、手机连接、强制改密、题库/练习、退出重登及统计；网络失败不伪造成功，`?preview=1` 不写正式数据，手机和 1536×1024 桌面首页均检查。修复了改密后题库 hook 未重取的问题及 smoke 对题量文案/异步路由的错误等待。截图在 AI 产出目录 `图片与设计/理论考试练习系统/P2-R-账号与密码安全验收-20261019/`。
 - 更新 PRD、架构、ADR、路线图、长期与本短期记忆；未把账户姓名或密码写入仓库文档。应用管理员尚未在真实运行库初始化，数据库仍无题库；本轮未导入原始 Excel，也未创建额外管理员。服务端已在 `127.0.0.1:3000` 运行 P2 构建，健康检查报告迁移版本 3。正式公网/局域网服务仍必须经可信 HTTPS。
-- 远端安全检查、正式 Commit/Push、GitHub SHA 核验及 Issue #2 关闭尚待本轮收尾；Issue #3 不关闭。
+- GitHub 远端树确认包含 V3 迁移、账号发放逻辑、账号安全测试、手机认证改密 UI、API/PRD/架构/路线图与记忆；没有原始 Excel、数据库、凭据、环境文件或 frp 密钥。仓库保持 Private。Issue #2 已附无密码验收摘要后关闭；Issue #3 保持 OPEN，尚未完成的安全工作继续跟踪其中。
 
 ## GitHub 首次上传记录（2026-10-19）
 - 私有仓库：<https://github.com/MilchstraBe-Endless10/theory-exam>；默认分支 `main`。
