@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   IconBook,
   IconChartBar,
@@ -178,4 +179,3 @@ export default function DashboardPage() {
     </>
   );
 }
-import { useEffect, useState } from 'react';
