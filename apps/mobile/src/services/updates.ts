@@ -56,7 +56,7 @@ export async function downloadAndOpenUpdate(
   for (let offset = 0; offset < bytes.length; offset += 0x8000) {
     binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + 0x8000, bytes.length)));
   }
-  const saved = await Filesystem.writeFile({ path: 'theory-exam-update.apk', directory: Directory.Cache, data: btoa(binary), recursive: true });
+  const saved = await Filesystem.writeFile({ path: 'updates/theory-exam-update.apk', directory: Directory.Cache, data: btoa(binary), recursive: true });
   // Android's Package Installer verifies the APK signer against the installed app before accepting an update.
   await FileOpener.open({ filePath: saved.uri, contentType: 'application/vnd.android.package-archive', openWithDefault: true });
 }
