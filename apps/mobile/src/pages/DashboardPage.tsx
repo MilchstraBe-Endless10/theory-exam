@@ -10,6 +10,7 @@ import {
 } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import StatCard from '../components/StatCard';
+import { MobileDashboard } from './MobilePages';
 
 const masteryTypes = [
   { name: '单选题', description: '共 845 题', tone: 'mint' },
@@ -19,6 +20,8 @@ const masteryTypes = [
 
 export default function DashboardPage() {
   return (
+    <>
+    <div className="desktop-route">
     <main className="dashboard-page">
       <div className="page-intro">
         <h1>从今天的进步开始。</h1>
@@ -146,5 +149,8 @@ export default function DashboardPage() {
         </div>
       </section>
     </main>
+    </div>
+    <MobileDashboard />
+    </>
   );
 }

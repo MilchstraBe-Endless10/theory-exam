@@ -2,6 +2,7 @@ import { IconBook, IconChevronDown, IconUserFilled } from '@tabler/icons-react';
 import { Outlet, useLocation } from 'react-router-dom';
 import MobileNav from './MobileNav';
 import Sidebar from './Sidebar';
+import { isImmersiveRoute } from '../pages/MobilePages';
 
 const pageNames: Record<string, string> = {
   '/': '概览',
@@ -16,9 +17,10 @@ const pageNames: Record<string, string> = {
 export default function AppShell() {
   const { pathname } = useLocation();
   const pageName = pageNames[pathname] ?? '概览';
+  const immersive = isImmersiveRoute(pathname);
 
   return (
-    <div className="app-layout">
+    <div className={`app-layout${immersive ? ' mobile-immersive' : ''}`}>
       <Sidebar />
       <div className="main-column">
         <header className="topbar">
@@ -53,7 +55,7 @@ export default function AppShell() {
           <Outlet />
         </div>
       </div>
-      <MobileNav />
+      {!immersive && <MobileNav />}
     </div>
   );
 }

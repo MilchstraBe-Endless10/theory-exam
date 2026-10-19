@@ -24,4 +24,13 @@
   --radius-card: 14px;
   --shadow-card: 0 8px 28px rgb(24 45 83 / 3.5%);
   --sidebar-width: 256px;
+
+  /* Mobile screens share the desktop palette and card language. */
+  --mobile-blue-soft: #edf2ff;
+  --mobile-green-soft: #eaf8f4;
+  --mobile-red-soft: #fff0f0;
+  --mobile-amber-soft: #fff7e9;
+  --mobile-purple-soft: #f0ecff;
+  --mobile-header-height: 48px;
+  --mobile-touch-target: 44px;
 }
