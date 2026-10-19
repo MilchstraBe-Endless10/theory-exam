@@ -1,9 +1,9 @@
 # 中期记忆（阶段 / 里程碑）
 
-更新时间：2026-10-19（P1 本地实现与验收完成；GitHub 阶段同步待完成）
+更新时间：2026-10-19（P1 实现、验收与 GitHub 同步完成）
 
 ## 当前阶段
-**P0、P0-M 已完成并同步；P1 服务端、鉴权、Excel 导入和管理界面已完成本地验收，当前仅待本轮 Commit/Push/远端核验；P2 尚未开始。**
+**P0、P0-M、P1 均已完成并同步到私有 GitHub；P1 服务端、鉴权、Excel 导入和管理界面通过本地验收；P2 尚未开始，等待用户明确指令。**
 
 ## Git 开发流程（长期约束）
 - 正式仓库：`https://github.com/MilchstraBe-Endless10/theory-exam`，保持 Private。每次开发开始前检查工作区/分支/远端并 fetch；阶段验证通过后默认普通提交、推送并核验远端 SHA。
@@ -14,7 +14,7 @@
 ## 阶段状态
 - [x] P0 视觉底座与项目骨架
 - [x] P0-M 手机 12 页面实现与视觉验收（独立阶段，2026-10-19 完成）
-- [ ] P1 服务器、鉴权与 Excel 题库导入（本地验证通过，待 Commit/Push/远端核验）
+- [x] P1 服务器、鉴权与 Excel 题库导入（本地验收及 GitHub 同步完成）
 - [ ] P2 日常练习及学习进度
 - [ ] P3 模拟考试、断线恢复、成绩历史
 - [ ] P4 错题复习和学习分析
@@ -62,7 +62,7 @@
 - 浏览器实测：Chromium 流程通过管理员初始化、普通用户创建、真实 Excel 预览/确认、手机服务器健康检查与普通用户登录、手机考试设置动态规则、桌面首页题库/规则呈现；空题库首页不显示固定题量。最终截图位于用户指定 AI 产出目录 `图片与设计/理论考试练习系统/P1-服务端浏览器验收-r4-20261019/`。UI smoke 13 项通过并回归 1536×1024 桌面首页。
 - 验证：`apps/mobile` 的 `npm run typecheck`、`npm run build`、`npm run test` 通过；`apps/server` 的 `npm run typecheck`、`npm run build`、`npm run test` 通过（9 项）、`npm run verify:local-import` 通过；两端 `npm audit --audit-level=moderate` 均报告 0 漏洞。生产构建服务的 `/api/health` 与 `/admin` 返回 200，未认证 `/api/banks` 返回 401。
 - API/安全决策已写入 `docs/API.md`、ADR-012；`docs/ROADMAP.md` 已对齐自动推送规则。业务考试规则未变；`memory/LONG_TERM.md` 未修改。
-- 当前 P1 代码和记忆仍待普通提交、推送至私有 `main` 及远端 SHA/仓库隐私核验。阶段同步结束后暂停，不进入 P2。
+- P1 阶段提交：`dcfd377bf9ce29324a58925dba760c0a9c1fd676`，<https://github.com/MilchstraBe-Endless10/theory-exam/commit/dcfd377bf9ce29324a58925dba760c0a9c1fd676>。普通推送成功；GitHub `refs/heads/main` 与本地 SHA 一致；远端仓库 `private=true`、默认分支 `main`；远端已核实存在服务端代码、测试、客户端题库服务与 API 文档。阶段完成后暂停，不进入 P2。
 
 ## GitHub 首次上传记录（2026-10-19）
 - 私有仓库：<https://github.com/MilchstraBe-Endless10/theory-exam>；默认分支 `main`。
