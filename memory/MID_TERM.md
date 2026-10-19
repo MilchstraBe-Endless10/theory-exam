@@ -72,6 +72,7 @@
 - 浏览器截图 18 张，覆盖 390×844、360×800 与 1536×1024 的练习选择、答题、正确/错误反馈及学习首页，另含管理员导入、登录、考试规则和空状态。最终验收目录：AI 产出目录 `图片与设计/理论考试练习系统/P2-真实刷题浏览器验收-r12-20261019/`。视觉检查发现并修正桌面结果缺少反馈/选项样式、侧栏账号未随登录更新；修改后的截图显示真实反馈、正确/错误选项状态和统计值。
 - `docs/API.md` 增补端点、请求/响应、错误码和幂等说明；ADR-013 记录会话与作答设计，ADR-014 记录 frpc 环回代理管理入口风险及 P5 先决条件。四级考试规则未改变；完整跨轮次错题掌握状态机留给 P4；`memory/LONG_TERM.md` 未修改。
 - P2 实现提交：`1dac8e9a25fecb0adfcf1f13c4387c594f1adce0`，<https://github.com/MilchstraBe-Endless10/theory-exam/commit/1dac8e9a25fecb0adfcf1f13c4387c594f1adce0>。普通 push 成功；推送后本地 `HEAD`、`origin/main` 和 `git ls-remote` SHA 一致。GitHub API 确认仓库 `PRIVATE`、默认分支 `main`，远端文件树含 P2 服务、路由、客户端 API、自动化测试、API 文档和记忆；敏感文件树扫描无本地题库、Excel、数据库、环境变量或 frp 配置。随后增加的记忆同步提交只记录此验证，不改变 P2 功能代码。
+- 既有运行态边界：只读检查发现 `127.0.0.1:3000/api/health` 返回 200，但 `/api/practice/sessions/active` 返回 404，说明常驻进程仍载入 P1 代码。本轮没有重启该服务、运行 V2 迁移或连接真实业务库，以遵守“不影响已运行服务和 SQLite”的要求。P2 浏览器 E2E 使用临时 Fastify 进程和隔离 SQLite 并导入本机真实 Excel。实际用户启用 P2 前需安排服务重启并应用非破坏性 V2 迁移；不得将当前 P1 运行进程描述为已提供 P2 API。
 
 ## GitHub 首次上传记录（2026-10-19）
 - 私有仓库：<https://github.com/MilchstraBe-Endless10/theory-exam>；默认分支 `main`。
