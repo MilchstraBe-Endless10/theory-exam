@@ -1,9 +1,9 @@
 # 中期记忆（阶段 / 里程碑）
 
-更新时间：2026-10-20（P5-A 本机 AVD 已安装 APK；WebView 初始化崩溃，Android 页面验收未通过）
+更新时间：2026-10-22（P5-A Android 与安全隔离阶段验收完成）
 
 ## 当前阶段
-**P0、P0-M、P1、P2、P2-R、P3、P4 均已完成验收并同步至私有 GitHub。P5-A 的服务端/浏览器/备份与安全代码已隔离验证；新增 8080 生产 Web Gateway、同源 Cookie/CSRF、双入口管理 API 拒绝与 Chromium 验收通过。Android 用户级 JDK 21/SDK/API 36 Emulator 已安装；Debug APK 已装入 Android 16/API 36 AVD，但 WebView 初始化 `SIGTRAP`，React 页面未显示，原生交互尚未验证。P5-A 未完成，也未开始 P5-B。正式 SQLite 保持 V4，MeFrp 双隧道离线，Issue #3/#7 继续打开。**
+**P0、P0-M、P1、P2、P2-R、P3、P4、P5-A 均已完成验收。P5-A 最终普通 APK 基线为 `com.theoryexam.mobile.dev` dev.9/versionCode 9，SHA-256 `3db11faf2ffd96118f79f5582b7a82fa6ba739c259b9cde96081f7a6d8e73ad5`；真实 Android `startScan()`/ML Kit/Bridge/地址处理及相机生命周期通过。核心练习、收藏、错题、考试、会话安全和 12 屏视觉/交互沿用未受扫码修改影响的普通 dev.7 实机证据；390×844 错题页使用专用 Google APIs AVD，设备差异已记录。安全隔离、备份/恢复、更新 SHA、双入口 Gateway 与浏览器回归通过。P5-A 阶段提交已推送到 `feat/p5-a-android-security`。P5-B 未开始；正式 SQLite 仍为 V4，MeFrp 双隧道未启用，Issue #7 保持 OPEN；P6 正式 Release 和完整私有升级链另行验收。**
 
 ## Git 开发流程（长期约束）
 - 正式仓库：`https://github.com/MilchstraBe-Endless10/theory-exam`，保持 Private。每次开发开始前检查工作区/分支/远端并 fetch；阶段验证通过后默认普通提交、推送并核验远端 SHA。
@@ -19,7 +19,7 @@
 - [x] P2-R 四账号、首次改密与密码安全（本机真实库 V3 迁移和四账号登录验收完成，2026-10-19）
 - [x] P3 模拟考试、断线恢复、成绩历史（真实题库隔离导入、浏览器验收与 GitHub 同步完成，2026-10-19）
 - [x] P4 错题复习和学习分析（V5 轮次、三态掌握、只读 db:status 修复、浏览器验收完成）
-- [ ] P5-A Android APP 与网络安全、备份和更新（代码/Web 隔离验收通过；本机 API 36 AVD 已安装 APK，但 WebView 初始化崩溃；原生交互未验收）
+- [x] P5-A Android APP 与网络安全、备份和更新（2026-10-22；dev.9 正式实时扫码与本轮同哈希重建通过；dev.7 核心业务/会话/收藏/考试和 12 屏未受影响验收复用；server 59/59、mobile UI 20 项、session 6/6、浏览器/Gateway smoke、APK 隔离和 systemd 模板检查通过；阶段提交 `84fa7d6b796a74433728ef3f8ac98644c096a970` 已推送）
 - [ ] P5-B 正式 systemd、可信 HTTPS、frp 与 V4→V6 数据库部署（需用户确认）
 - [ ] P6 系统回归、发行准备与 GitHub 发布
 
@@ -147,9 +147,49 @@
 - 双入口实现提交：`fb00f720a5d9a02927c834579f0b797570d5c159`（<https://github.com/MilchstraBe-Endless10/theory-exam/commit/fb00f720a5d9a02927c834579f0b797570d5c159>）；记忆同步提交 `6b2e4da7356f85b83283be18bc329818d9f7a845` 已推送，普通 Push 后 `HEAD`、`origin/feat/p5-a-android-security` 和 `git ls-remote` 一致；`main` 仍为起始基线。
 
 
-## P5-A 本机 Android 验收最新状态（2026-10-20；未通过）
+## P5-A 本机 Android 首次验收失败记录（2026-10-20；后续 KVM/API35 复测见文末）
 - 用户批准下载并创建本机 AVD。本机 Google Emulator 37.2.12 / Android 16 API 36 x86_64 已出现可视化系统窗口；APK SHA-256 `329e776eb46e298c17efce70c7424c9c050e9374b3379bdad41ea2664c785f9e` 与指定版本匹配，包管理器确认安装，Activity 可启动。
 - 模拟器因宿主无 `/dev/kvm`、CPU 未暴露 VT-x 而以 TCG 运行。启动页之后 WebView 创建 `SIGTRAP`，涉及 `libmonochrome_64.so` / `AwContents` / `WebViewChromium` / `CapacitorWebView`；四种图形模式未修复。React 页面未出现，不能判定 APK 页面/导航通过。QEMU 关闭期间 SIGSEGV，coredumpctl 本轮列出 5 条；未复制 core。未改系统内核、全局 Java、GPU/Hyprland 配置。
 - 证据目录：截图 `/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/图片与设计/理论考试练习系统/P5-A-本机Android验收-20261020/`；模拟器日志及交付报告 `/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/报告与研究/理论考试练习系统/P5-A-本机Android验收-20261020/`。交付报告明确区分已安装、未渲染和原生功能未测。
 - 回归：mobile typecheck/build/UI smoke 14/14；server typecheck/build/tests 59/59；Chromium Web browser suite 通过。正式 SQLite V4、四个用户、旧端口服务和隧道均未修改。当前无连接设备，模拟器已停止。
 - 下一步仍在 P5-A：使用可用 VT-x/KVM 的主机或 Android 真机重试，优先定位系统 WebView/软件仿真崩溃；之后再验收扫码、安全存储、断网恢复、练习/考试恢复、更新器。不得以 Chromium/CI 代替本机 Android 验收，不进入 P5-B。
+
+## P5-A WebView SIGTRAP 诊断跟进（2026-10-20；历史记录，后续 KVM/API35 复测见文末）
+- 只读硬件检查：Intel i5-11400F；`lscpu` 无 Virtualization/Hypervisor 字段，`/proc/cpuinfo` 无 `vmx`，`/dev/kvm` 不存在；`lsmod` 无 KVM 模块，但当前内核 `kvm.ko`、`kvm-intel.ko` 存在。`modprobe -n` 仅 dry-run，未加载模块。无法仅凭只读 Linux 结果判定 BIOS 关闭 VT-x 或上层虚拟化未透传；不是权限问题。未改 BIOS/内核/启动配置/桌面，未重启。
+- 默认启动 Android 16/API 36 x86_64 AVD 报需要硬件加速。官方 TCG 模式 `ANDROID_I_WANT_MY_TCG=yes`, `-accel off` 可创建 QEMU，但约 8 分钟仍未完成系统启动（`sys.boot_completed` 空、黑屏、WebView provider 当前为 null）。Chrome/系统浏览器 HTTPS Intent 未能启动。故不能用这个 AVD 区分项目 APK、Capacitor 与系统 WebView。
+- 本轮 ADB logcat 从 ADB 设备可用后、浏览器/Activity 尝试前开始采集并本机保存；不覆盖设备 offline 期间的最早引导日志，未上传 GitHub。bugreport 来宾端完成但 ADB 在模拟器离线时无法复制到主机。QEMU 于 10:57:28 CST `SIGSEGV/SEGV_MAPERR` 退出；本轮未启动项目 APK，QEMU 崩溃与项目 WebView trap 并非同一事件。QEMU core 未导出。
+- 文档更新后回归：`apps/mobile` typecheck/build 通过、UI smoke 14/14；`apps/server` typecheck/build、59/59 测试和 Chromium browser smoke 通过。仅修改文档和记忆，未改源码。
+- 当时尚未执行 API 35/34、独立最小 Android WebView/Capacitor 对照；该阶段的 VT-x 阻塞后来解除，当前 Android 结果以文末 2026-10-20 KVM/API35 复测记录为准。
+
+## P5-A KVM/API 35 Android 验收跟进（2026-10-20/21 CST；仍未完整验收）
+- 当前宿主可见 `vmx`，`/dev/kvm`、`kvm_intel`、`kvm` 可用；Emulator 37.2.12.0 的 `-accel-check` 返回 KVM version 12 usable。未在本轮修改 BIOS/内核/启动参数或重启。
+- AVD `TheoryExam_API35` 是 Android 15/API 35 Google APIs x86_64，2 CPU/2 GiB/720×1600/GPU auto；`TheoryExam_API35_Play` 是 Google Play API 35 同规格（1080×1920），为 Google Code Scanner Play 模块而保留。系统启动完成，WebView provider 为 124.0.6367.219。项目 APK React/Capacitor 页面正常显示；干净 logcat 4,996 行无 FATAL EXCEPTION、SIGTRAP、Fatal signal、项目进程崩溃或 WebView provider 错误。
+- 修复 `MobilePages.tsx` 的相机拒绝反馈：请求被拒绝时展开手动连接表单并显示权限提示。Android 权限弹窗实际点击拒绝后页面与进程保持正常；相机权限状态为 denied。Google Play AVD 已打开 Google Barcode Scanner 原生界面，但没有相机图像源，二维码解码未验证。
+- 重建 Debug APK：`com.theoryexam.mobile.dev` 1.0.0-dev.1/versionCode 1，minSdk 24、targetSdk 36、x86_64 ABI，Debug 证书 SHA-256 `11ee2f274aa14f3f25590532a2e60be0747bbf7024aae5589c571b3a91cd4462`。APK SHA-256 `8bbcc26478e2e1e99ccdc60412318766dc22eecbf9c8b8b9c2978f9dc7a2bc59`。隔离联调专用 debug CA 仍在该测试包内，不能发布；保存副本于 AI 输出 `其他/理论考试练习系统/P5-A-Android-验收-20261020-03/`。
+- 本阶段先前实测含隔离 Fastify/SQLite+本机 Excel 1,283 题：登录、首次改密、安全存储恢复/退出、刷题/收藏/错题复习、考试恢复/答案同步/断网恢复/提交、更新下载 SHA 校验与 Android 系统安装器、同签名升级数据保留和考试中阻止更新。当前测试 SQLite 只读统计：1,283 题、2 个测试用户、2 个考试场次、2 个复习轮次；没有打印身份或凭据。服务已停止并清理临时 DB/TLS key/账号凭据。
+- 回归：mobile build/typecheck 通过、UI smoke 14 项；server typecheck/build/59 项；production Web browser smoke 4 项。正式 `db:status` 仍 V4→V6 pending；3000/3001/8080 无 listener，生产/frp units inactive。MeFrp、正式 DB、证书与端口未改。未找到历史 QEMU core 文件；没有清理共享 journal。
+- 建立用户级启动/停止 desktop entries 与 APK 打开处理脚本，源文件在 AI 输出 `编程脚本/其他脚本/理论考试练习系统/P5-A-Android-Emulator-20261020-03/`，menu links 在 `~/.local/share/applications/`。已实际启动/等待 boot_completed/停止 AVD；停止仅按 AVD 名称匹配，另有 APK package allowlist 和安装降级防护。
+- P5-A 仍未完成：必须有真实相机图像输入才能验 QR 解码；模拟器测试不替代 Android 真机。本轮保留未提交修改并暂停 Git Commit/Push，功能分支与远端维持 `122ad04ab59983c60b19b8edb588fd6a0883ff98`，P5-B 未开始。
+
+## P5-A Android 12 屏视觉/交互子任务完成（2026-10-21 CST；里程碑仍进行中）
+- 设计基准 `design/reference/mobile-12-screens-v1.png` 在现有 Android 15/API 35 KVM Emulator 上逐屏复核。Android framebuffer 390×844 与 360×800 两尺寸均采集 12 屏，共 24 张；布局未发生水平溢出。启动页与登录页结构、入口路径、输入控件及按钮经修正后符合设计层级；其余页面的卡片、答题状态、底部导航与安全区域均复核。测试触摸覆盖连接/登录路径、软键盘与返回键、答案选择、多选切换、长内容滚动、底部导航和前后台恢复。
+- 视觉差异保留并显式记录：缺少原始 splash 高分辨率图导致背景裁切与参考不同；Android 系统栏与 iOS 外框不是同一平台；少量字号/卡片间距仍有小差异。没有把 Android 平台差异包装成完全 1:1。
+- 验收包是独立 `com.theoryexam.mobile.dev.visual` preview-fixture Debug APK，SHA-256 `b058200ca26ab7e7b4fafee130304c73f83f84111fdcfb36c56e7b65dd428a6f`。它用于 visual QA，不含测试 CA 资源，manifest 捕获的网络 API 请求为 0；原 `.dev` 及 dev.2 均未覆盖。此前 dev.2 与 ScanLab 的实时 CameraX/ML Kit 扫码结果另见 Virtual Scene 验收报告。
+- 当前 `apps/mobile` typecheck/production build 通过，UI smoke 18/18、Capacitor production sync、JDK21 环境下 Gradle `assembleDebug` 成功。普通构建产物被工作区已有 `apps/mobile/android/app/src/debug/` CA 配置影响，已标为本地 debug-only，未安装/发布。最终过滤 Logcat 无 app 崩溃、SIGTRAP/SIGSEGV/ANR。
+- 视觉子任务通过不等于整个 P5-A 完成：本轮夹具包没有连接隔离 Fastify/SQLite；本轮未重跑 production identity 的全套安全/更新集成，未验收物理手机。正式库、账号、MeFrp、TLS 和 systemd 未改，P5-B 未开始。验收报告在 AI 输出 `报告与研究/理论考试练习系统/P5-A-Android视觉终验-20261021-12/`；对照图及 24 张 Android 截图在对应 `图片与设计/` 目录。
+- 由于开始时工作区存在多项未提交更改，遵循 AGENTS.md 第 11 条保留不提交/推送；本地/远端分支仍 `122ad04ab59983c60b19b8edb588fd6a0883ff98`。本轮 `git diff --check` 通过，Issue #7 未改动。
+
+## P5-A 最终开发包集成门槛（2026-10-21 CST；未完成）
+- 从当前源码构建普通 `com.theoryexam.mobile.dev` dev.3（versionCode 3）。APK SHA-256 `c4cdc000f4b928f6485d1dba5ed09f8e7f7dde634fc1c6c6a91c603bc2f0e44a`，Debug 证书 SHA-256 `11ee2f274aa14f3f25590532a2e60be0747bbf7024aae5589c571b3a91cd4462`。普通包只用系统证书，打包内容不含测试 CA / network security config，Manifest `usesCleartextTraffic=false`；CA 配置隔离在用户目录的 `p5aTest` build type，包名追加 `.p5atest`。
+- dev.3 已装入独立 Android 15/API 35/KVM AVD，实际启动启动页、连接页和登录页；设备内 APK 与构建 APK SHA 一致。WebView `124.0.6367.219`、Capacitor `BridgeActivity` 初始化；启动 Logcat 无应用崩溃、SIGTRAP、SIGSEGV 或 ANR。首次安装没有旧登录状态。`previewMode` 受 `import.meta.env.DEV` 门控，生产 APK 资源扫描未发现已知预览夹具标记。
+- 本轮 `.p5atest` 变体的隔离业务回归不能代替普通 `.dev` dev.3 的业务身份全回归；dev.3 未连接测试 CA 后端。Camera2 枚举后置 ID 10，但 Virtual Scene 画面未呈现测试二维码，因此 dev.3 实时扫码和回填未验证。`.visual` 变体已通过的 12 屏截图不等于 dev.3 12 屏复验；dev.3 更新流程未完成，私有 Release 更新属于 P6。
+- 回归记录：mobile typecheck/build/UI smoke 18 项、server typecheck/build/tests 59 项、browser smoke、Capacitor sync、普通 APK `assembleDebug`、隔离变体 `assembleP5aTest`、`git diff --check` 均通过。完整脱敏报告位于 AI 输出目录 `报告与研究/理论考试练习系统/P5-A-最终开发包集成-20261021-01/`；截图位于同名 `图片与设计/` 目录，原始日志本机保留且未上传。
+- 当前分支仍有 15 项修改与 5 个未跟踪项；fetch 后本地与远端 SHA 同为 `122ad04ab59983c60b19b8edb588fd6a0883ff98`。依 AGENTS.md 第 11 条，因阶段尚未通过且工作区含既存改动，暂停 Commit/Push。已在 Issue #7 添加不含原始日志的集成进展评论（2026-10-21）；Issue 保持 OPEN。P5-A 未完成、P5-B 未开始。
+
+## P5-A 最终统一基线更新（2026-10-22 CST；dev.7，阶段未完成）
+- 统一普通 APK 基线采用 `com.theoryexam.mobile.dev` dev.7/versionCode 7，SHA-256 `7e084f5043571bfb9c4c57d56740a5fb4f3834167ca7c40373cee53bdbded08b`，Debug signer SHA-256 `11ee2f274aa14f3f25590532a2e60be0747bbf7024aae5589c571b3a91cd4462`。归档件与 Android Play AVD 拉取的已安装 `base.apk` 哈希相同。普通包不含测试 CA/网络安全配置，`usesCleartextTraffic=false`。
+- dev.7 Android 业务证据整合了登录/SecureStorage、正常练习、收藏及 A/B 隔离、错题跨轮次掌握、服务端 180 题考试、强停恢复和会话失效/网络恢复。更新端点认证、元数据和 APK SHA 校验/篡改拒绝由服务端现有自动化覆盖；正式私有 Release 安装升级属于 P6。
+- 12 屏证据不能宣称全矩阵通过：360×800 有 12 个真实 Android 页面的截图对应；启动页应取 `181a-dev7-play-start-360x800.png`，旧 `173-dev7-start-360x800.png` 是个人中心。390×844 缺少错题页截图。背景裁切与系统栏视觉差异继续记录。
+- 最终 Virtual Scene 实验确认 Camera2 ID10 活动和系统相机预览可用；ADB Console 接受墙面二维码图，JWT 限定的两个 `protected` gRPC 方法可控制相机，但有限旋转/位移覆盖的客厅、厨房、走廊画面没有完整二维码。未启动正式扫码插件，扫码、原生事件、Bridge 与地址回填因此未验证；没有证据指向项目解码代码缺陷。扫码场景截图位于 AI 输出配套图片目录 `.../dev7-qr-retest/`。
+- 回归重跑：mobile typecheck/build、UI smoke 20/20、session 6/6；server typecheck/build/tests 59/59；真实浏览器主流程和 Web 入口 smoke；`git diff --check` 均通过。仅修正 `apps/server/scripts/browser-flow-smoke.mjs` 两个过期期望值（8→7），不影响 APK。临时服务、CA 私钥、凭据/SQLite与`/tmp`原始日志清理；两台专用 AVD 关闭且数据保留；gRPC SDK allowlist 已按原 SHA 恢复。正式 SQLite V4、生产 TLS、MeFrp、systemd 未动。
+- P5-A 尚未完成；当前远端和本地功能分支仍为 `122ad04ab59983c60b19b8edb588fd6a0883ff98`。未提交/推送（仍有交织的 P5-A 工作区修改且扫码与视觉矩阵未闭合）；Issue #7 保持 OPEN，P5-B 未开始。
