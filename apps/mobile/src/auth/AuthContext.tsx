@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { Network } from '@capacitor/network';
 import { Capacitor } from '@capacitor/core';
 import { IconShieldLock } from '@tabler/icons-react';
-import { apiRequest, authSessionEvent, persistentSession, previewMode, saveSession, savedServerAddress, serverConfigEvent, type ApiSession, type ApiUser } from '../services/api';
+import { apiRequest, authSessionEvent, currentSessionRevision, persistentSession, previewMode, saveSession, savedServerAddress, serverConfigEvent, type ApiSession, type ApiUser } from '../services/api';
 
 interface AuthState {
   user: ApiUser | null;
@@ -63,11 +63,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const refreshSession = () => {
       void refreshServer();
       const address = savedServerAddress();
-      if (!address || !userRef.current || userRef.current.mustChangePassword || renewal) return;
+      if (!address || userRef.current?.mustChangePassword || renewal) return;
+      const revision = currentSessionRevision();
+      if (!userRef.current) {
+        if (!persistentSession()) return;
+        renewal = apiRequest<ApiUser>('/api/auth/me', { base: address })
+          .then(user => {
+            if (active && revision === currentSessionRevision() && !userRef.current) setUser(user);
+          })
+          .catch(() => undefined)
+          .finally(() => { renewal = null; });
+        return;
+      }
+      const userId = userRef.current.id;
       renewal = apiRequest<ApiSession>('/api/auth/renew', { base: address, method: 'POST', body: {} })
         .then(async session => {
+          if (!active || revision !== currentSessionRevision() || userRef.current?.id !== userId) return;
           await saveSession(session, persistentSession());
-          if (active) setUser(session.user);
+          if (active && currentSessionRevision() === revision + 1 && userRef.current?.id === userId) setUser(session.user);
         })
         .catch(() => undefined)
         .finally(() => { renewal = null; });
@@ -90,11 +103,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (preview) return;
+    let active = true;
+    const revision = currentSessionRevision();
     const address = savedServerAddress();
     setServerAddress(address);
-    if (!address) { setServerStatus('disconnected'); return; }
+    if (!address) { setServerStatus('disconnected'); return () => { active = false; }; }
     void refreshServer();
-    apiRequest<ApiUser>('/api/auth/me', { base: address }).then(setUser).catch(() => setUser(null));
+    apiRequest<ApiUser>('/api/auth/me', { base: address })
+      .then(user => { if (active && revision === currentSessionRevision()) setUser(user); })
+      .catch(() => { if (active && revision === currentSessionRevision()) setUser(null); });
+    return () => { active = false; };
   }, [preview]);
 
   const value = useMemo<AuthState>(() => ({

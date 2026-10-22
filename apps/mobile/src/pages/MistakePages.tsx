@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { IconArrowLeft, IconBook, IconCheck, IconChevronRight, IconCircleCheck, IconClockHour4, IconFileText, IconFlag, IconRefresh, IconWifi, IconX } from '@tabler/icons-react';
+import { IconArrowLeft, IconBook, IconCheck, IconChevronDown, IconChevronRight, IconCircleCheck, IconClockHour4, IconFileText, IconFlag, IconRefresh, IconWifi, IconX } from '@tabler/icons-react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { useBanks } from '../services/banks';
@@ -128,7 +128,7 @@ export function MistakesPage() {
     <p className="mastery-note">连续答对需要发生在不同复习轮次。同一轮重复提交不会增加掌握度；普通练习和模拟考试答对不计入复习轮次。</p>
   </>;
 
-  return <><div className="mobile-route"><MobileScreen className="mistakes-screen"><MobileHeader title="错题复习" /><PreviewBadge /><StatTiles stats={stats} />
+  return <><div className="mobile-route"><MobileScreen className="mistakes-screen"><MobileHeader title="错题复习" back="/" /><PreviewBadge /><StatTiles stats={stats} />
     {active && <section className="mistake-resume-card"><span><strong>有一轮复习尚未完成</strong><small>已答 {active.round.submittedCount} / {active.round.questionCount} 题 · 第 {active.round.currentPosition} 题</small></span><button onClick={() => void resume()} disabled={starting}>继续复习 <IconChevronRight size={17} /></button></section>}
     {controls}
     {scope === 'mastered' && <section className="mastered-list"><h2>已掌握错题</h2>{preview ? <p>开发预览示例 · 正式掌握记录从服务端读取</p> : masteredItems.length ? masteredItems.slice(0, 12).map(item => <div key={item.questionId} className="mastered-item"><span className="mastery-pill is-mastered">已掌握</span><strong>{item.type === 'single' ? '单选' : item.type === 'multiple' ? '多选' : '判断'}</strong><p>{item.stem}</p><small>累计错误 {item.wrongCount} 次 · 连续正确 {item.consecutiveCorrectRounds} 个复习轮次</small></div>) : <p>{loading ? '正在读取…' : '当前筛选下没有已掌握错题。'}</p>}</section>}
@@ -136,8 +136,8 @@ export function MistakesPage() {
     {error && <ErrorBox onRetry={() => setRefreshKey(value => value + 1)}>{error}</ErrorBox>}
     {!user && !preview && <div className="mistake-empty"><IconWifi size={27} /><strong>登录后读取个人错题</strong><span>错题与掌握状态由本机服务端按账号隔离。</span><Link className="mobile-button" to="/login">前往登录</Link></div>}
     {bank && stats && !availableCount && scope === 'pending' && <div className="mistake-empty"><IconCircleCheck size={27} /><strong>当前没有待复习错题</strong><span>正式作答答错后，题目会出现在这里。</span></div>}
-    <section className="review-history-list"><div><h2>复习历史</h2><button onClick={() => setRefreshKey(value => value + 1)} aria-label="刷新错题数据"><IconRefresh size={17} /></button></div>{preview ? <p>开发预览中不展示正式复习记录。</p> : history.length ? history.slice(0, 5).map(item => <Link key={item.id} to={`/mistakes/history/${encodeURIComponent(item.id)}`} className="review-history-row"><span><strong>{item.status === 'completed' ? '已完成复习' : item.status === 'exited' ? '已暂时退出' : '进行中的复习'}</strong><small>{new Date(item.createdAt).toLocaleString('zh-CN')} · {item.questionType === 'all' ? '混合题型' : typeLabel[item.questionType]} · {item.answeredCount}/{item.questionCount} 题</small></span><b>{item.questionCount ? `${Math.round(item.correctCount / item.questionCount * 100)}%` : '—'}</b><IconChevronRight size={17} /></Link>) : <p>{loading ? '正在读取复习历史…' : '暂无复习历史。'}</p>}</section>
     <div className="mistake-footer"><button className="mobile-button" onClick={() => void start()} disabled={starting || (!preview && (!user || !bank || !availableCount || (scope === 'mastered' && !availableCount)))}>{starting ? '正在创建复习轮次…' : scope === 'mastered' ? '重新复习已掌握错题' : '开始复习'} <IconChevronRight size={18} /></button><small>{bank?.name ?? (bankLoading ? '正在读取题库…' : bankError || '连接并登录后读取当前题库')}</small></div>
+    <details className="review-history-list"><summary><h2>复习历史</h2><IconChevronDown size={18} /></summary><div className="review-history-body"><div className="review-history-actions"><button onClick={() => setRefreshKey(value => value + 1)} aria-label="刷新错题数据"><IconRefresh size={17} /></button></div>{preview ? <p>开发预览中不展示正式复习记录。</p> : history.length ? history.slice(0, 5).map(item => <Link key={item.id} to={`/mistakes/history/${encodeURIComponent(item.id)}`} className="review-history-row"><span><strong>{item.status === 'completed' ? '已完成复习' : item.status === 'exited' ? '已暂时退出' : '进行中的复习'}</strong><small>{new Date(item.createdAt).toLocaleString('zh-CN')} · {item.questionType === 'all' ? '混合题型' : typeLabel[item.questionType]} · {item.answeredCount}/{item.questionCount} 题</small></span><b>{item.questionCount ? `${Math.round(item.correctCount / item.questionCount * 100)}%` : '—'}</b><IconChevronRight size={17} /></Link>) : <p>{loading ? '正在读取复习历史…' : '暂无复习历史。'}</p>}</div></details>
   </MobileScreen></div><div className="desktop-route"><DesktopMistakes bankName={bank?.name} stats={stats} history={history} active={active} controls={controls} error={error} loading={loading} scope={scope} availableCount={availableCount} starting={starting} start={() => void start()} resume={() => void resume()} onHistory={() => setRefreshKey(value => value + 1)} /></div></>;
 }
 

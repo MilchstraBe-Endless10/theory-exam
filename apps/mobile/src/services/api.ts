@@ -32,6 +32,8 @@ const sessionEvent = 'theory-exam:session-change';
 const serverEvent = 'theory-exam:server-change';
 let sessionToken = '';
 let csrfToken = '';
+let sessionActive = false;
+let sessionRevision = 0;
 
 // Remove tokens left by older web builds; browser sessions now use HttpOnly cookies.
 if (typeof window !== 'undefined') {
@@ -40,7 +42,7 @@ if (typeof window !== 'undefined') {
 }
 
 export function previewMode(search = window.location.search): boolean {
-  return import.meta.env.DEV && new URLSearchParams(search).get('preview') === '1';
+  return import.meta.env?.DEV === true && new URLSearchParams(search).get('preview') === '1';
 }
 
 export function usesSameOriginWebApi(): boolean {
@@ -75,33 +77,47 @@ export function currentToken(): string {
   return sessionToken;
 }
 
+export function currentSessionRevision(): number {
+  return sessionRevision;
+}
+
 export function persistentSession(): boolean {
   return localStorage.getItem(REMEMBER_KEY) === 'true';
 }
 
 export async function saveSession(session: ApiSession, remember: boolean): Promise<void> {
+  const revision = ++sessionRevision;
   sessionToken = session.token ?? '';
   csrfToken = session.csrfToken ?? '';
+  sessionActive = true;
   localStorage.setItem(REMEMBER_KEY, String(remember));
   if (Capacitor.isNativePlatform()) {
     if (remember && session.token) await SecureStorage.setItem(NATIVE_TOKEN_KEY, session.token);
     else await SecureStorage.removeItem(NATIVE_TOKEN_KEY);
   }
-  window.dispatchEvent(new CustomEvent(sessionEvent, { detail: { user: session.user } }));
+  if (revision === sessionRevision) window.dispatchEvent(new CustomEvent(sessionEvent, { detail: { user: session.user } }));
 }
 
-export function clearSession(notify = true): void {
+export function clearSession(notify = true, expected?: { revision: number; token?: string }): boolean {
+  if (expected && (expected.revision !== sessionRevision || (expected.token !== undefined && expected.token !== sessionToken))) return false;
+  sessionRevision += 1;
   sessionToken = '';
   csrfToken = '';
+  sessionActive = false;
   localStorage.removeItem(REMEMBER_KEY);
   if (Capacitor.isNativePlatform()) void SecureStorage.removeItem(NATIVE_TOKEN_KEY).catch(() => undefined);
   if (notify) window.dispatchEvent(new CustomEvent(sessionEvent, { detail: { user: null } }));
+  return true;
 }
 
 async function getSessionToken(): Promise<string> {
   if (sessionToken) return sessionToken;
   if (!Capacitor.isNativePlatform() || !persistentSession()) return '';
-  sessionToken = await SecureStorage.getItem(NATIVE_TOKEN_KEY).catch(() => null) ?? '';
+  const stored = await SecureStorage.getItem(NATIVE_TOKEN_KEY).catch(() => null) ?? '';
+  if (!sessionToken && stored) {
+    sessionToken = stored;
+    sessionActive = true;
+  }
   return sessionToken;
 }
 
@@ -125,7 +141,10 @@ export async function apiRequest<T>(
   if (!base) throw new ApiError('请先连接服务器。', 'SERVER_NOT_CONFIGURED');
   const headers = new Headers(options.headers);
   const native = Capacitor.isNativePlatform();
+  const requestRevision = sessionRevision;
   const token = options.auth === false ? '' : await getSessionToken();
+  if (options.auth !== false && requestRevision !== sessionRevision) throw new ApiError('登录状态已变化，请重试。', 'SESSION_CHANGED');
+  const hadSession = Boolean(token) || (!native && sessionActive);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   const method = (options.method ?? 'GET').toUpperCase();
   if (!native && options.auth !== false && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
@@ -153,12 +172,17 @@ export async function apiRequest<T>(
   try { payload = response.status === 204 ? {} : await response.json(); } catch { payload = {}; }
   if (!response.ok) {
     const value = payload as { error?: { code?: string; message?: string } };
-    if (response.status === 401 && options.auth !== false && !path.endsWith('/login')) {
-      clearSession();
-      window.dispatchEvent(new CustomEvent(sessionEvent, { detail: { user: null, expired: true } }));
+    if (response.status === 401 && options.auth !== false && !path.endsWith('/login') && hadSession) {
+      if (clearSession(true, { revision: requestRevision, ...(token ? { token } : {}) })) {
+        window.dispatchEvent(new CustomEvent(sessionEvent, { detail: { user: null, expired: true } }));
+      }
     }
     throw new ApiError(value.error?.message || `服务器请求失败（HTTP ${response.status}）。`, value.error?.code, response.status);
   }
+  if (requestRevision !== sessionRevision && (path === '/api/auth/me' || path === '/api/auth/renew')) {
+    throw new ApiError('登录状态已变化，请重试。', 'SESSION_CHANGED');
+  }
+  if (path === '/api/auth/me' && options.auth !== false && requestRevision === sessionRevision) sessionActive = true;
   return payload as T;
 }
 

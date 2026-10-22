@@ -1,5 +1,7 @@
 apply plugin: 'com.android.application'
 
+def p5aTestConfigDirectory = new File(System.getProperty('user.home'), '.config/theory-exam/p5a-test-ca')
+
 android {
     namespace = "com.theoryexam.mobile.dev"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +9,8 @@ android {
         applicationId "com.theoryexam.mobile.dev"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0.0-dev.1"
+        versionCode 9
+        versionName "1.0.0-dev.9"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -17,9 +19,25 @@ android {
         }
     }
     buildTypes {
+        debug {
+            // The ordinary development APK uses Android's system trust store only.
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+        p5aTest {
+            initWith debug
+            applicationIdSuffix ".p5atest"
+            versionNameSuffix "-p5a-test"
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['debug']
+        }
+    }
+    sourceSets {
+        p5aTest {
+            manifest.srcFile new File(p5aTestConfigDirectory, 'AndroidManifest.xml')
+            res.srcDir new File(p5aTestConfigDirectory, 'res')
         }
     }
 }

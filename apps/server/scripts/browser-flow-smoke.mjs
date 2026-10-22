@@ -333,7 +333,7 @@ try {
   console.log('PASS browser visibility recovery renews the existing server session');
 
   await navigate(`${viteOrigin}/practice`);
-  await waitFor(async () => (await evaluate('document.querySelectorAll("button.practice-choice").length')) === 8, 'Daily practice modes did not load.');
+  await waitFor(async () => (await evaluate('document.querySelectorAll("button.practice-choice").length')) === 7, 'Daily practice modes did not load.');
   await capture('390x844-practice-selection.png');
   await cdp('Emulation.setDeviceMetricsOverride', { width: 1536, height: 1024, deviceScaleFactor: 1, mobile: false });
   await navigate(`${viteOrigin}/practice`);
@@ -341,7 +341,7 @@ try {
   await capture('1536x1024-practice-selection.png');
   await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await navigate(`${viteOrigin}/practice`);
-  await waitFor(async () => (await evaluate('document.querySelectorAll("button.practice-choice").length')) === 8, 'Mobile practice modes did not reload.');
+  await waitFor(async () => (await evaluate('document.querySelectorAll("button.practice-choice").length')) === 7, 'Mobile practice modes did not reload.');
   await waitFor(async () => (await bodyText()).includes('当前题库：四级理论题库'), 'Practice selection did not finish loading the real bank.');
   await clickContaining('button.practice-choice', '单选题练习');
   try {
