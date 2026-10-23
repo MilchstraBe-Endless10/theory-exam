@@ -1,12 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { isLoopbackAddress } from './auth.js';
-import { loadConfig } from './config.js';
+import { isPrivateLanIPv4, loadConfig } from './config.js';
 import { createWebGateway, validateWebApiTarget } from './web-gateway.js';
 
 const config = loadConfig();
 const host = process.env.WEB_HOST?.trim() || '127.0.0.1';
 const port = Number(process.env.WEB_PORT ?? '8080');
-if (!isLoopbackAddress(host)) throw new Error('WEB_HOST must be a loopback address.');
+if (!isLoopbackAddress(host) && (process.env.WEB_ALLOW_LAN_BIND !== 'true' || !isPrivateLanIPv4(host))) {
+  throw new Error('Non-loopback WEB_HOST must be a private IPv4 address with WEB_ALLOW_LAN_BIND=true.');
+}
 if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error('WEB_PORT must be an integer from 1 to 65535.');
 
 const apiTarget = validateWebApiTarget(process.env.WEB_API_TARGET ?? `http://127.0.0.1:${config.port}`).toString();
@@ -18,7 +20,7 @@ if (config.environment === 'production' && !certificatePath) throw new Error('Pr
 const gateway = createWebGateway({
   staticDir: process.env.WEB_STATIC_DIR?.trim() || config.staticDir,
   apiTarget,
-  ...(certificatePath && keyPath ? { tls: { cert: readFileSync(certificatePath), key: readFileSync(keyPath) } } : {}),
+  ...(certificatePath && keyPath ? { tls: { cert: readFileSync(certificatePath), key: readFileSync(keyPath), minVersion: 'TLSv1.2' as const } } : {}),
 });
 let closing = false;
 

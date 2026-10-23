@@ -2,6 +2,30 @@
 
 > 交接快照；不得记录真实密码、密码哈希或凭据文件内容。
 
+## P5-B Web 全站修复与公网复验（2026-10-23 CST）
+- Web 修复已构建并部署；`theory-exam-p5b-api.service`、`theory-exam-p5b-web-public.service`、`theory-exam-p5b-web-lan.service` 重启后均 active。API/Web 健康 HTTPS 均 HTTP 200、证书校验结果 0；未修改 DB、证书、MeFrp 或服务配置。
+- 修复浏览器 `/connect` 的同源服务验证路径、桌面错题复习选项/按钮样式与 1100px 响应断点；收紧同 IP 不同端口 Cookie 使用与 Origin/Host 匹配，Gateway 保留浏览器 Host、继续清除客户端伪造的 Forwarded/X-Forwarded/X-Real-IP。
+- 严格 Web CA Chromium 公网测试通过：16 路由 × 6 视口（1920×1080、1536×1024、1280×800、768×1024、390×844、360×800），无白屏、横向溢出、未捕获 JS 异常或意外 HTTP 错误；health=200，未认证=401，管理 API/页面=404。公网未写正式用户学习数据。
+- 隔离 SQLite + 原始 Excel 1,283 题 + production Web Gateway/严格 Web CA 的真实业务浏览器流程通过首登改密、会话续期、练习判分/退出恢复、收藏增删与收藏专项练习、错题两轮掌握/历史、考试同步/恢复/交卷/评分/历史、A/B 切换与数据隔离；考试提交前答案隐藏。服务端 62/62，移动 UI smoke 20 项、会话回归 6/6，Mobile build，Server typecheck/build 均通过。
+- 实际发现并修正 smoke 本身两处问题：初次在 about:blank 请求相对 URL；无效 history ID 触发预期 400。脚本现先访问公网首页，并使用 UUID 格式受保护资源检查，公网复测完整通过。
+- 最终复跑：mobile build/typecheck 通过，UI smoke 20 项、会话回归 6/6；server typecheck/build、62/62 tests、P1–P5 真实业务 Chromium、production Gateway 浏览器矩阵、严格 CA 公网 16 路由 × 6 视口全部通过。API/Web 私有 CA 健康检查均 HTTP 200，三项 user services active/enabled，Linger=yes。
+- Gateway 浏览器 smoke 第一次因默认端口 8080 正被本机生产服务占用而未启动；测试脚本已改用临时可用端口并重跑通过。该失败是测试 fixture 端口冲突，不是生产 Web 故障。
+- README、PROJECT_GUIDE、CHANGELOG 与 P5-B 路线图已写明整体架构、形成阶段、每个可核实 dev.1–dev.10 变化/缺档、本轮实际 Web 缺陷和修复；两张 1536×1024 概念插画已加入 `docs/assets/`，明确标为 AI 插画而非应用截图。Web专项验收截图仍保存在 AI 输出 `图片与设计/理论考试练习系统/P5-B-Web端全面验收-20261023/`。
+- dev.10 APK 重新核验 SHA-256 `5d0089f664c63d52ade066679b38320c12b418de54613c716dd19a443e78ebb2`，aapt 确认 package/versionCode/versionName；包标记为 debuggable 和 Debug 测试签名，未重建或改版。API 明文流量关闭、APK 包含当前 API CA 资源；没有 CA/叶证书私钥进入 Git。当前工作区只精确提交代码、测试、项目文档与两张文档插画；本机 `.visual-test.init.gradle`、未引用 splash v3/v5、APK、CA、数据库和日志排除。
+- 本轮代码与文档已通过测试，待精确提交并普通推送到 `feat/p5-a-android-security`；dev.10 按私有 GitHub 测试预发布交付，不是 P6 正式 Release。其余 P5-B 收尾仍未整体标记完成，P6 未开始。
+- 公网截图位于 AI 输出 `报告与研究/理论考试练习系统/P5-B-Web验收-20261023/screenshots/public-post-deploy-final/`；完整 A/B 与真实业务截图位于 `screenshots/isolated-business-gateway-final-rerun5/`，修复后错题页和其他尺寸截图位于同目录各子目录。回滚快照位于 `deployment-snapshot/pre-web-fix-20261023/`。README、CHANGELOG、PROJECT_GUIDE、ROADMAP 已据实更新；P5-B 总阶段保持进行中。
+- 待完成：整理审查并提交本轮安全代码/测试/文档，普通 push 后核对远端 SHA；按用户授权在私有仓库创建 `v1.0.0-dev.10-test` 预发布并上传已核验 dev.10 APK 与 SHA 文件。P6 正式发行仍未开始。
+
+## P5-B 真实账号与练习验收进展（2026-10-23 CST；Android 业务验收完成）
+- P5-B 三项 user systemd 服务 `theory-exam-p5b-api.service`、`theory-exam-p5b-web-lan.service`、`theory-exam-p5b-web-public.service` 均 active/enabled，`Restart=on-failure`（3 秒），Linger=yes。API/Web 公网与 LAN HTTPS health 均通过对应私有 CA 和 IP SAN 验证；Web `/admin`、`/api/admin/status` 404；管理 listener 仅绑定 `127.0.0.1:3001`。
+- 正式 DB V6，`integrity_check=ok`。管理员已由 `apps/server` 的 `admin:init` 初始化；数据库有 1 个管理员、4 个普通账号。管理员账号不用于 Android 学习登录；Android 使用的是普通专用测试账号。
+- 原始 `local-input/四级理论试题.xlsx` SHA-256 `20d1b4d98485c048f65c3e6f2602eed4440950bf8f4fc857a47c4ce85c3a9a19`。本机管理 API 导入并启用 1,283 题（845 单选、38 多选、400 判断），缺答/格式错误 0，64 组重复题干保留；考试规则 120×0.5 + 20×1 + 40×0.5，90 分钟、100 分、及格线 60。导入前一致性备份 SHA `071a47462fbcbdb48890d98537c5de29f1f6384fbb7c3d813102809626cd6db5`，复核未变。
+- APK dev.10/versionCode 10 SHA `5d0089f664c63d52ade066679b38320c12b418de54613c716dd19a443e78ebb2`，Debug 签名 SHA `11ee2f274aa14f3f25590532a2e60be0747bbf7024aae5589c571b3a91cd4462`。AVD `TheoryExam_P5B_Deploy_API35`（Android 15/API 35），设备 APK 哈希与交付 APK 一致。Manifest `usesCleartextTraffic=false`。
+- 用户直接在 Android APP 内使用受限凭据文件中标记的专用普通测试账号登录并完成首次改密；秘密值、用户名和 Token 均未读取或记录。APP 实际提交 2 道判断题，服务端反馈 2/2 正确。只读数据库聚合：该测试账号 2 次作答/2 次正确、1 道收藏；顺序练习 2/20 与收藏练习 1/1 最终均正常暂退，`integrity_check=ok`。
+- 收藏专项练习真实读取服务端 1/1 题。Android force-stop 后以 Remember Me 恢复已认证首页，继续入口可恢复收藏专项练习第 1/1 题。最终首页显示接触 2 题、正确率 100%、题库进度 2/1,283。
+- 测试后 API/Web 公网 HTTPS health 均 HTTP 200、TLS_VERIFY=0、migrationVersion=6；三个服务仍 active，Linger=yes。脱敏 Logcat 未发现 APP Fatal、ANR、SIGSEGV 或 SIGTRAP。冷启动首几秒有白色加载画面，随后正常渲染，没有崩溃。
+- 实际验收报告：AI 输出 `报告与研究/理论考试练习系统/P5-B-真实账号与练习验收-20261023-01/实际运行进展与待输入项.md`。新截图位于 `图片与设计/理论考试练习系统/P5-B-真实账号练习验收-20261023/`，包括作答反馈与 force-stop 后恢复的收藏练习。
+- 本轮未改应用源码、APK、生产服务配置或数据库结构；仅产生已脱敏截图及更新报告/SHORT_TERM。此前工作区已有 P5-B 代码修改和本机未跟踪文件，本轮未暂存/提交/推送；需另行审阅变更归属后再决定阶段提交。P5-B 当前完成 Android 登录与练习专项；正式桌面浏览器 CA 信任/登录验收与 P6 正式签名/发布仍未在本轮执行。
 - 日期：2026-10-22。
 - 阶段：P5-A 已按本地 ROADMAP 完成验收。普通 dev.9 (`com.theoryexam.mobile.dev`, versionCode 9) SHA-256 为 `3db11faf2ffd96118f79f5582b7a82fa6ba739c259b9cde96081f7a6d8e73ad5`；正式 Android `startScan()` 的真实 ML Kit 帧、有效/无效地址、Bridge 回填、取消/返回及 Camera2 释放通过。ScanLab 是辅助诊断，未识别到码不阻塞正式路径。
 - 核心练习、收藏、错题、考试、会话安全与 12 屏视觉/交互复用未受 dev.9 扫码修改影响的普通 dev.7 验收；390×844 错题页使用 dev.7 普通 APK及真实隔离 API，在专用 Google APIs AVD 留证。dev.9 已安装 APK的历史设备哈希与本轮重建 APK、归档 APK一致。
@@ -214,3 +238,51 @@
 - ScanLab `startScan(Back)` 在 Android 15/API35 Google Play AVD 上实际启动；Camera2 后置 ID 10 活跃客户端为 ScanLab，CameraX Preview/ImageAnalysis 附着并 OPEN，ImageAnalysis 640×480，OnedDecoderClient 初始化成功。ScanLab WebView 本轮截图没有显示场景；取消后页面显示已取消、`Active Camera Clients: []`。测试窗口内 GMS UI/BarhopperV3/VisionBarcode/Fatal/SIGSEGV/SIGTRAP/ANR 均 0。此前 dev.9 普通 APP 的正式 `startScan()` 有效/无效二维码与地址回填通过记录不变，见独立报告。
 - gRPC 显式使用 `-grpc 8554 -grpc-use-jwt`，监听为 `[::ffff:127.0.0.1]:8554`；仅临时添加两个受保护 camera RPC，不关闭 JWT；`emulator_access.json` SHA-256 前后保持 `c70a962250289c5840c3fd414a63382048de93a0e97cade9bef3d60257004fc3`。结束时只关闭目标 AVD，未清用户数据；dev.9 与 ScanLab 均留在独立包身份下。报告在 AI 输出 `报告与研究/理论考试练习系统/P5-A-ScanLab-same-AVD-20261022-01/`，截图在对应 `图片与设计/.../P5-A-ScanLab-same-AVD-20261022-01/`；P5-A 因 dev.9 全业务与 12 屏集成未复验仍未完成，P5-B 未开始，未 Commit/Push。
 - 下一单项：只针对冷启动后 Virtual Scene 图片未出现在 Camera 画面的状态，恢复一张可见 QR 输入后再补同 AVD ScanLab 原生事件；不作无界场景搜索。
+
+
+## P5-B 生产只读审计与方案（2026-10-22 CST；未部署）
+- 用户确认 P5-A 已完成并同步；本地 ROADMAP 也标记 P5-A 已验收。本轮授权仅限只读生产审计与方案文档。没有修改生产配置、service、数据库、DNS、证书或 MeFrp 映射；未进入 P6。
+- 执行 git fetch origin 后，feat/p5-a-android-security 的 HEAD 与 origin 同为 8ee3f53b21555ab8842246071d45030116d8857f。工作区既有 3 个未跟踪视觉/Gradle 文件保留；不提交。
+- 只读核实到两个仍运行的 MeFrp 0.67.1 客户端，用户提供的启动日志为 theory-exam TCP 118.24.61.190:30946、theory-exam-web TCP 118.24.61.190:10393；控制台、localIP/localPort、节点固定性、ACL 与备用隧道未核实。凭据未写入记忆/报告；启动参数暴露风险列为部署前轮换待办。未停止现有客户端。
+- 正式 SQLite 只读基线为 home 下 V4、当前代码 V6；240 KiB、4 users/0 admin/0 bank/0 question/0 learning record；完整性 ok、外键违规 0。已有 V1 空库归档不是 V4 恢复点。当前 systemd 模板数据目录 /var/lib/theory-exam 与实际 DB 路径不一致，备份模板仍写同卷；目标 ext4 设备 SMART 与恢复演练未验证。未运行迁移/备份。
+- 项目仅有 API 与 daily backup systemd 模板，模板 verify 通过；没有 Web/Caddy/Nginx/MeFrp unit。Fastify API 3000、管理 3001、Web Gateway 8080 审计时无项目 listener。初稿曾提出可控域名 DNS-01 + Caddy；该建议已被用户 2026-10-22 的明确无域名决定取代。当前按 MeFrp 双 TCP + IP SAN 私有 CA + 本机 TLS edge 设计；Web Gateway 统一终止 TLS 仍需另行批准 web-server.ts 的显式 loopback proxy mode。
+- 六份 P5-B 只读审计/拓扑/TLS/SQLite/systemd/授权清单报告保存在 AI 输出目录：报告与研究/理论考试练习系统/P5-B-生产只读审计-20261022-01/。实际执行了 git fetch、git status/rev-parse、git diff --check、源码/监听状态只读检查和 systemd-analyze verify；无应用构建或测试（本轮仅文档与审计）。
+- 下一项：用户先确认 MeFrp 控制台的两条 TCP 映射、固定 LAN 地址与独立备份介质 SMART/恢复能力；在新的逐项授权前不进行生产变更。
+
+
+## P5-B 无域名 IP SAN / 私有 CA 方案修订（2026-10-22 CST；仅审计与文档）
+- 用户明确禁止域名、免费子域名和 DDNS。公网候选仅为 118.24.61.190:30946（API）与 118.24.61.190:10393（Web）；MeFrp 控制台映射、localIP/localPort、节点固定性仍未核验。
+- 六份 P5-B 报告已修订：公网 IP:端口 + 两条 TCP 透明转发 + 本机 TLS 终止；SAN 使用公网 IP 与待确认固定 LAN IP。建议 Android API 与桌面 Web 分离私有 CA 信任锚、CA 签发密钥离线，APK 仅含 API CA 公钥、浏览器安装 Web CA 公钥。
+- Android targetSdk 36、usesCleartextTraffic=false，当前无 networkSecurityConfig；IP 字面量范围是否能由 Android NSC/WebView 精确约束必须在真实 Android/WebView 测试验证。NSC 按主机而非端口匹配；桌面 Cookie 也不按端口隔离，须保持 Web 同源 Gateway、精确 Origin/CSRF，并确认 API 不接受浏览器 Cookie。
+- 公信任 IP 证书未证明适用于当前共享 MeFrp IP/高位端口；CA 挑战端口与 IP 控制权需平台确认。IP 或 LAN 地址变化会触发叶证书重签；若 Android 信任范围绑定精确 IP，还需 APK 信任配置轮换。
+- 本轮只改 AI 输出目录中的六份报告及 SHORT_TERM；未生成/安装证书、改 APK/安全策略、MeFrp、systemd、DNS、生产 SQLite 或服务。旧域名/DNS-01 方案已被无域名约束取代。阶段未部署。
+- 六份报告目录：/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/报告与研究/理论考试练习系统/P5-B-生产只读审计-20261022-01/。
+
+
+## P5-B 双 TCP 与 LAN 只读核验（2026-10-22 CST；未部署）
+- 浏览器当前是 about:blank，没有已登录 MeFrp 控制台页；两个安装目录没有可解析的常见文本映射配置。历史映射仍为候选记录：118.24.61.190:30946 / :10393。remotePort 与 localIP/localPort、服务端注册状态、ACL、节点固定性未核实。
+- 本机两个 mefrpc 进程各有 ESTAB TCP peer 连接到 118.24.61.190:2333；2333 是客户端 peer 端口，不是隧道 remotePort。进程 argv 检测到敏感认证参数标记，未显示参数或值；需另行批准凭据轮换方案。
+- eno1 当前 192.168.0.107/24，NetworkManager ipv4.method=auto，网关 192.168.0.1；不是已确认固定 LAN 地址。主路由表默认接口 eno1，但去往 118.24.61.190 实际经 tun0/table 2022、源 10.20.0.1；tun0 用途与 MeFrp 出站预期需确认。
+- ss -lnt 未见项目 3000/3001/5173/8080 或候选 edge 9443/9444。建议 API/Web TLS edge 候选端口分别为 9443/9444，MeFrp local target 候选为 loopback；候选端口仅在核验时未监听，仍须部署前重查。nftables ruleset 当前用户不可读。
+- 新报告 07-P5-B-双TCP映射与固定LAN地址核验报告已写入既有 P5-B AI 输出目录；原 6 份报告补充了有本轮证据支持的网络字段。未改生产网络、防火墙、服务、证书、APK 或数据库。
+
+## P5-B 实际部署与 dev.10 APK 交付（2026-10-23 CST；服务已启动，业务登录受数据/凭据阻塞）
+- 按用户明确授权实际部署。正式 SQLite V4→V6 已迁移；此前先建立跨卷一致性备份并通过隔离恢复及 V6 完整性验证。当前只读计数：4 个用户、0 个题库、0 道题；没有收到可用账号凭据，未创建/重置账号、未导入题库，因此登录和答题未验收。
+- API、Web 公网 Gateway、Web LAN Gateway 三个 user systemd unit 当前 `enabled/active`。公网 TCP 入口实测：API `https://118.24.61.190:30946`，Web `https://118.24.61.190:10393`；公网 API/Web `/api/health` 均返回 V6 `ok`，Web `/` HTTP 200（用 Web CA 验证）。LAN API `https://192.168.0.107:3000` 与 Web `https://192.168.0.107:8080` 健康检查通过。管理 listener 3001 仅 `127.0.0.1`。当前 `loginctl Linger=no`：user units 在此用户会话存续期间运行，不保证注销后继续运行。
+- Android dev.10 实测首次连接失败根因为生产 `CORS_ORIGINS` 缺少 Capacitor WebView 来源 `https://localhost`：TLS 请求已到 API 并返回 200，但 WebView 因跨源响应未获准而拒绝读取。只在本机 API EnvironmentFile 精确增加 `https://localhost` 并重启 API；随后 AVD WebView 内 fetch 得到真实 200 JSON，正式连接按钮显示“服务器连接成功”。未改放宽 TLS/Cleartext；dev.10 Network Security Config 对 `118.24.61.190` / `192.168.0.107` 限定 API 根 CA，证书 IP SAN 匹配。
+- AVD `TheoryExam_P5B_Deploy_API35`（Android 15/API 35 Google APIs）设备内包与归档 APK SHA 一致：`5d0089f664c63d52ade066679b38320c12b418de54613c716dd19a443e78ebb2`。身份 `com.theoryexam.mobile.dev` / `1.0.0-dev.10` / versionCode 10；Android Debug 签名 SHA-256 `11ee2f274aa14f3f25590532a2e60be0747bbf7024aae5589c571b3a91cd4462`，不是正式发布签名。强停后重启回到 APP 首页，服务器 URL 仍保存在 localStorage；未登录，故该结果不是会话恢复验收。
+- APK 与 SHA 清单交付于 AI 输出 `其他/理论考试练习系统/P5-B-Android交付-20261023/`；目录另有 Web CA 公钥 PEM（不含私钥）及交付说明。连接成功、强停重启截图在 AI 输出 `图片与设计/理论考试练习系统/P5-B-Android验证-20261023/`。
+- 应用更新 API 要求认证；当前 update cache 目录为空，未配置高于 dev.10 的 APK。未用同版本冒充更新。无凭据可验证认证后的更新元数据/下载，因此更新链未验收。
+- APK Manifest `usesCleartextTraffic=false`，签名与设备安装包哈希核验一致。之前本轮回归：server tests 60/60；mobile UI smoke 20 项、session regression 6/6；mobile/server typecheck/build、Gradle assembleDebug 通过。本次续测只改本机 API CORS EnvironmentFile；APK 采用此前 P5-B 的应用 TLS 配置源码构建。
+- Git fetch 后 `feat/p5-a-android-security` 与 origin 均为 `8ee3f53b21555ab8842246071d45030116d8857f`；无提交/推送。暂不上传 GitHub 预发布 APK：构建依赖的 `apps/mobile/android/app/src/main/res/raw/theory_exam_api_ca.pem` 被 `*.pem` 忽略且 AGENTS.md 禁止提交证书，干净 checkout 不能复现该 APK；工作区还保留本机 `.visual-test.init.gradle` 与 splash v3/v5 等原有未跟踪文件。没有将其们加入交付或删除。
+- 尚需用户在不经本轮读取/重置的条件下提供可用账号凭据，并明确何时允许导入题库；另外需主机管理员决定是否为 user systemd 开启 linger，才能保证登出后持续服务。登录、真实题库练习、Remember Me 登录恢复、认证更新下载和正式持续运行仍未验收；本轮未进入 P6。
+
+## P5-B 真实账号与题库导入/练习验收续测（2026-10-23 CST；凭据输入待用户完成）
+- 本轮续核：Linger=yes；API、LAN Web、MeFrp Web 三个 user units 均 enabled/active，Restart=on-failure/3s。API 公网使用 API CA 验证 /api/health 为 V6 200；Web 公网使用 Web CA 验证首页和同源 health 200，/admin 与 /api/admin/status 404；管理 listener 仍只监听 127.0.0.1:3001。
+- 正式库只读为 V6、integrity ok；4 普通用户、0 管理员、0 题库、0 题。唯一启用测试账号标记数为 1，四个普通账号均有首次改密标记；用户名和凭据未读取/记录。管理员初始化 CLI 已启动于交互 PTY 并等待本机输入，目前尚未创建管理员。
+- 用项目 ExcelJS 解析原始 local-input/四级理论试题.xlsx（147,197 bytes；SHA-256 20d1b4d98485c048f65c3e6f2602eed4440950bf8f4fc857a47c4ce85c3a9a19）：1,283题，单选845/多选38/判断400，缺答0、错误0，64组/129行重复题干按原规则保留。
+- 导入前一致性 V6 备份复制到独立 ext4 /mnt/Server_Data_Backup/P5B-Production-Backups/theory-exam-v6/production-v6-pre-import-2026-10-22T16-34-58-869Z-63b6c668.sqlite，SHA-256 071a47462fbcbdb48890d98537c5de29f1f6384fbb7c3d813102809626cd6db5，mode 0600；项目验证 integrity ok/FK0，并用项目恢复函数在临时隔离库验证 V6/4 users/0 banks/0 questions，临时副本已清理。
+- 复用原 TheoryExam_P5B_Deploy_API35 AVD（Android15/API35 Google APIs）。设备内 dev.10 base.apk SHA 与归档一致；真实 APP 手动验证 API HTTPS 地址显示连接成功，未出现 TLS 错误或严重崩溃日志。APK: com.theoryexam.mobile.dev / 1.0.0-dev.10 / code10 / SHA-256 5d0089f664c63d52ade066679b38320c12b418de54613c716dd19a443e78ebb2，Android Debug signer SHA-256 11ee2f274aa14f3f25590532a2e60be0747bbf7024aae5589c571b3a91cd4462；Manifest cleartext=false。
+- 因正式库无管理员且用户未输入管理员凭据，尚未进行正式 API 预览/确认导入；普通账号凭据亦须由用户本人在 Android 登录页输入，故真实登录、答题、收藏/进度同步与强停恢复未验收。没有改密码哈希、添加管理员或写入题库。
+- 交付说明：AI 输出 其他/理论考试练习系统/P5-B-Android交付-20261023/Android使用说明-登录与练习.md。进展报告：报告与研究/理论考试练习系统/P5-B-真实账号与练习验收-20261023-01/实际运行进展与待输入项.md；Android 截图：图片与设计/理论考试练习系统/P5-B-真实练习验收-20261023-01/。
+- 当前工作区既有 P5-B 变更未暂存/提交/推送，保护 8 项已修改与 5 项未跟踪文件；本轮未改源码、APK、MeFrp 配置、TLS 文件或数据库业务内容。下一步只需用户在本机交互输入管理员凭据并在 dev.10 登录页面输入获授权测试账号凭据后继续。

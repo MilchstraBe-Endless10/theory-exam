@@ -1,9 +1,9 @@
 # 中期记忆（阶段 / 里程碑）
 
-更新时间：2026-10-22（P5-A Android 与安全隔离阶段验收完成）
+更新时间：2026-10-23（P5-B Web 修复部署与浏览器复验）
 
 ## 当前阶段
-**P0、P0-M、P1、P2、P2-R、P3、P4、P5-A 均已完成验收。P5-A 最终普通 APK 基线为 `com.theoryexam.mobile.dev` dev.9/versionCode 9，SHA-256 `3db11faf2ffd96118f79f5582b7a82fa6ba739c259b9cde96081f7a6d8e73ad5`；真实 Android `startScan()`/ML Kit/Bridge/地址处理及相机生命周期通过。核心练习、收藏、错题、考试、会话安全和 12 屏视觉/交互沿用未受扫码修改影响的普通 dev.7 实机证据；390×844 错题页使用专用 Google APIs AVD，设备差异已记录。安全隔离、备份/恢复、更新 SHA、双入口 Gateway 与浏览器回归通过。P5-A 阶段提交已推送到 `feat/p5-a-android-security`。P5-B 未开始；正式 SQLite 仍为 V4，MeFrp 双隧道未启用，Issue #7 保持 OPEN；P6 正式 Release 和完整私有升级链另行验收。**
+**P0、P0-M、P1、P2、P2-R、P3、P4、P5-A 均已完成验收。P5-A 最终普通 APK 基线为 `com.theoryexam.mobile.dev` dev.9/versionCode 9，SHA-256 `3db11faf2ffd96118f79f5582b7a82fa6ba739c259b9cde96081f7a6d8e73ad5`；真实 Android `startScan()`/ML Kit/Bridge/地址处理及相机生命周期通过。P5-B 已部署正式 user systemd、MeFrp 双 TCP、IP HTTPS、SQLite V6 和 1,283 题；dev.10 登录、练习、收藏和会话恢复通过。2026-10-23 Web 修复已部署，严格 CA 公网 Chromium 16 路由 × 6 视口通过，隔离真实 API 的练习/错题/考试业务流程通过；P5-B 总阶段仍按路线图跟踪。P6 正式签名和完整升级发布链未开始。**
 
 ## Git 开发流程（长期约束）
 - 正式仓库：`https://github.com/MilchstraBe-Endless10/theory-exam`，保持 Private。每次开发开始前检查工作区/分支/远端并 fetch；阶段验证通过后默认普通提交、推送并核验远端 SHA。
@@ -20,7 +20,7 @@
 - [x] P3 模拟考试、断线恢复、成绩历史（真实题库隔离导入、浏览器验收与 GitHub 同步完成，2026-10-19）
 - [x] P4 错题复习和学习分析（V5 轮次、三态掌握、只读 db:status 修复、浏览器验收完成）
 - [x] P5-A Android APP 与网络安全、备份和更新（2026-10-22；dev.9 正式实时扫码与本轮同哈希重建通过；dev.7 核心业务/会话/收藏/考试和 12 屏未受影响验收复用；server 59/59、mobile UI 20 项、session 6/6、浏览器/Gateway smoke、APK 隔离和 systemd 模板检查通过；阶段提交 `84fa7d6b796a74433728ef3f8ac98644c096a970` 已推送）
-- [ ] P5-B 正式 systemd、可信 HTTPS、frp 与 V4→V6 数据库部署（需用户确认）
+- [ ] P5-B 正式 systemd、可信 HTTPS、frp 与 V4→V6 数据库部署及总阶段收尾（服务、数据库与 Web 已部署，P5-B 总阶段尚未关闭）
 - [ ] P6 系统回归、发行准备与 GitHub 发布
 
 ## 本阶段验收
@@ -193,3 +193,10 @@
 - 最终 Virtual Scene 实验确认 Camera2 ID10 活动和系统相机预览可用；ADB Console 接受墙面二维码图，JWT 限定的两个 `protected` gRPC 方法可控制相机，但有限旋转/位移覆盖的客厅、厨房、走廊画面没有完整二维码。未启动正式扫码插件，扫码、原生事件、Bridge 与地址回填因此未验证；没有证据指向项目解码代码缺陷。扫码场景截图位于 AI 输出配套图片目录 `.../dev7-qr-retest/`。
 - 回归重跑：mobile typecheck/build、UI smoke 20/20、session 6/6；server typecheck/build/tests 59/59；真实浏览器主流程和 Web 入口 smoke；`git diff --check` 均通过。仅修正 `apps/server/scripts/browser-flow-smoke.mjs` 两个过期期望值（8→7），不影响 APK。临时服务、CA 私钥、凭据/SQLite与`/tmp`原始日志清理；两台专用 AVD 关闭且数据保留；gRPC SDK allowlist 已按原 SHA 恢复。正式 SQLite V4、生产 TLS、MeFrp、systemd 未动。
 - P5-A 尚未完成；当前远端和本地功能分支仍为 `122ad04ab59983c60b19b8edb588fd6a0883ff98`。未提交/推送（仍有交织的 P5-A 工作区修改且扫码与视觉矩阵未闭合）；Issue #7 保持 OPEN，P5-B 未开始。
+
+## P5-B Web 全站修复子阶段（2026-10-23 CST）
+- 当前阶段状态已纠正：P5-B 已获授权并完成真实部署，正式 V6 题库和 Android dev.10 业务验收已有独立记录；不能沿用早期“尚未开始”的历史状态。P5-B 总阶段目前仍进行中，P6 未开始。
+- 本轮修复浏览器连接页与同源 API 验证、桌面错题答题控件/平板断点、Gateway 原始 Host 传递及 API Origin/Cookie 主机端口绑定。API/Web/LAN 三服务重启后 active；公网 API 和 Web HTTPS health 均 200，TLS verify=0。
+- 公网 strict-CA Chromium 在 16 个 SPA 路由与 6 个视口完成 96 次加载，页面非空、无横向溢出、无未捕获 JS 或意外 HTTP 错误；`/admin` 和 `/api/admin/status` 为 404。production HTTPS Gateway + 隔离真实题库 Chromium 流程通过首登改密、登录、练习、收藏增删/专项练习、错题两轮掌握、考试同步/恢复/提交，以及 A/B 切换后收藏/进度隔离；不在正式普通账号生成 Web 验收记录。
+- 最终回归：Mobile build；Mobile UI smoke 20 项；session 6/6；Server typecheck/build/test 62/62；公网 deployed browser smoke；production Gateway full browser flow；`git diff --check`。公网和完整业务截图、旧/部署构建快照保存在 AI 输出 `报告与研究/理论考试练习系统/P5-B-Web验收-20261023/`。
+- 后续只处理安全审查、精确 Git 提交/push 和本次授权的 dev.10 私有测试预发布上传；不关闭 Issue #7，不进入 P6。

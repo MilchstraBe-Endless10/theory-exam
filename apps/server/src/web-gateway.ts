@@ -1,6 +1,6 @@
 import { createReadStream, existsSync, realpathSync, statSync, type Stats } from 'node:fs';
 import { createServer as createHttpServer, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { createServer as createHttpsServer } from 'node:https';
+import { createServer as createHttpsServer, type ServerOptions as HttpsServerOptions } from 'node:https';
 import { extname, join, resolve, sep } from 'node:path';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
@@ -19,7 +19,7 @@ const securityHeaders: Record<string, string> = {
 export interface WebGatewayOptions {
   staticDir: string;
   apiTarget: string;
-  tls?: { key: Buffer; cert: Buffer };
+  tls?: HttpsServerOptions;
 }
 
 function errorReply(response: ServerResponse, status: number, message: string): void {
@@ -94,7 +94,9 @@ function proxyApi(request: IncomingMessage, response: ServerResponse, target: UR
     port: target.port || undefined,
     method: request.method,
     path: `${target.pathname.replace(/\/$/, '')}${request.url ?? pathname}`,
-    headers: headerValues(request.headers),
+    // Keep the browser-facing authority so the API can verify Origin against the public Web port.
+    // Forwarded client-IP claims stay stripped by headerValues().
+    headers: { ...headerValues(request.headers), host: request.headers.host ?? target.host },
     timeout: 120_000,
   }, incoming => {
     response.writeHead(incoming.statusCode ?? 502, { ...responseHeaders(incoming.headers), 'cache-control': 'no-store' });

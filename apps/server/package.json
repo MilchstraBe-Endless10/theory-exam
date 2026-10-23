@@ -15,6 +15,7 @@
     "test": "tsx --test test/*.test.ts",
     "test:browser": "node scripts/browser-flow-smoke.mjs",
     "test:web:browser": "node scripts/web-entry-browser-smoke.mjs",
+    "test:web:deployed": "node scripts/deployed-web-browser-smoke.mjs",
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx src/cli.ts migrate",
     "db:status": "tsx src/cli.ts status",

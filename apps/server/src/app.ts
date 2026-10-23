@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
+import type { ServerOptions } from 'node:https';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
@@ -26,11 +27,21 @@ export interface BuildAppOptions {
   surface?: 'combined' | 'business' | 'admin';
   staticDir?: string;
   logger?: boolean | FastifyServerOptions['logger'];
+  https?: ServerOptions;
+  runBackgroundJobs?: boolean;
   now?: () => Date;
 }
 
 function errorPayload(code: string, message: string, details?: Record<string, unknown>) {
   return { error: { code, message, ...(details ? { details } : {}) } };
+}
+
+const nativeOrigins = new Set(['https://localhost', 'capacitor://localhost']);
+
+function originMatchesRequestHost(origin: string, host: string | undefined): boolean {
+  if (!host) return false;
+  try { return new URL(origin).host.toLowerCase() === host.toLowerCase(); }
+  catch { return false; }
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -48,7 +59,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const db = options.database ?? (config.environment === 'test'
     ? openMigratedDatabase(config.databasePath)
     : openDatabase(config.databasePath));
-  const app = Fastify({
+  const serverOptions = {
     logger: options.logger === false ? false : {
       ...(typeof options.logger === 'object' ? options.logger : {}),
       level: typeof options.logger === 'object' ? options.logger.level ?? 'info' : 'info',
@@ -62,7 +73,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     },
     trustProxy: false,
     bodyLimit: 12 * 1024 * 1024,
-  });
+  };
+  const app = options.https
+    ? Fastify({ ...serverOptions, https: options.https }) as unknown as FastifyInstance
+    : Fastify(serverOptions);
   app.decorate('db', db);
   app.decorate('config', config);
   app.decorate('localOnly', requireLocal);
@@ -70,7 +84,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.decorate('requireAdmin', requireAdmin);
   const examNow = options.now ?? (() => new Date());
   app.decorate('examNow', examNow);
-  if (surface !== 'admin') {
+  if (surface !== 'admin' && options.runBackgroundJobs !== false) {
     settleExpiredExams(db, examNow());
     const expiryTimer = setInterval(() => {
       try { settleExpiredExams(db, examNow()); }
@@ -88,6 +102,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     reply.header('permissions-policy', 'camera=(), microphone=(), geolocation=()');
     reply.header('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http: https: capacitor://localhost; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
     const origin = request.headers.origin;
+    if (config.environment === 'production' && origin && !nativeOrigins.has(origin)
+      && !originMatchesRequestHost(origin, request.headers.host)) {
+      return reply.code(403).send(errorPayload('ORIGIN_HOST_MISMATCH', '请求来源与当前服务入口不匹配。'));
+    }
     if (origin && config.corsOrigins.has(origin)) {
       reply.header('access-control-allow-origin', origin);
       reply.header('vary', 'Origin');

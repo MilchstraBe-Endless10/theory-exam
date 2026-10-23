@@ -1,6 +1,26 @@
 apply plugin: 'com.android.application'
 
 def p5aTestConfigDirectory = new File(System.getProperty('user.home'), '.config/theory-exam/p5a-test-ca')
+def apiCaSourceFile = new File(System.getenv('THEORY_API_CA_FILE')?.trim() ?: new File(System.getProperty('user.home'), '.local/share/theory-exam/pki/p5b-20261022/api-ca.pem').absolutePath)
+def apiCaResourceFile = file('src/main/res/raw/theory_exam_api_ca.pem')
+
+tasks.register('prepareApiCaResource') {
+    inputs.file(apiCaSourceFile)
+    outputs.file(apiCaResourceFile)
+    doLast {
+        if (!apiCaSourceFile.isFile()) {
+            throw new GradleException('The public API CA certificate is missing. Set THEORY_API_CA_FILE to its protected external path; never add the CA private key to the repository.')
+        }
+        if (apiCaResourceFile.isFile()) {
+            if (!java.util.Arrays.equals(apiCaResourceFile.bytes, apiCaSourceFile.bytes)) {
+                throw new GradleException('The existing ignored Android API CA resource differs from THEORY_API_CA_FILE; it was left untouched.')
+            }
+        } else {
+            apiCaResourceFile.parentFile.mkdirs()
+            java.nio.file.Files.copy(apiCaSourceFile.toPath(), apiCaResourceFile.toPath())
+        }
+    }
+}
 
 android {
     namespace = "com.theoryexam.mobile.dev"
@@ -9,8 +29,8 @@ android {
         applicationId "com.theoryexam.mobile.dev"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 9
-        versionName "1.0.0-dev.9"
+        versionCode 10
+        versionName "1.0.0-dev.10"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -61,6 +81,10 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
+
+tasks.named('preBuild').configure {
+    dependsOn(tasks.named('prepareApiCaResource'))
+}
 
 try {
     def servicesJSON = file('google-services.json')

@@ -1,11 +1,25 @@
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const serverDir = fileURLToPath(new URL('..', import.meta.url));
-const origin = `http://127.0.0.1:${process.env.WEB_PORT ?? '8080'}`;
+async function availablePort() {
+  const server = createServer();
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Could not allocate a local Web test port.');
+  await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  return String(address.port);
+}
+
+const webPort = process.env.WEB_PORT ?? await availablePort();
+const origin = `http://127.0.0.1:${webPort}`;
 const captureRoot = process.argv[2] ? resolve(process.argv[2]) : '';
 const pending = new Map();
 const failures = [];
@@ -74,7 +88,7 @@ async function cleanup() {
 try {
   fixture = spawn(join(serverDir, 'node_modules/.bin/tsx'), [join(serverDir, 'scripts/web-entry-fixture.ts')], {
     cwd: serverDir,
-    env: { ...process.env, NODE_ENV: 'test', WEB_PORT: process.env.WEB_PORT ?? '8080' },
+    env: { ...process.env, NODE_ENV: 'test', WEB_PORT: webPort },
     stdio: 'ignore',
   });
   fixture.on('error', error => failures.push(`fixture failed: ${error.message}`));
@@ -152,6 +166,43 @@ try {
   check(desktop.width === 1536 && desktop.height === 1024 && !desktop.overflow, 'desktop Web home did not fit 1536x1024');
   await capture('1536x1024/home-after-login.png');
   console.log('PASS desktop Web home at 1536x1024');
+
+  const routeMatrix = [
+    '/', '/start', '/connect', '/login', '/practice', '/practice/answer', '/practice/result',
+    '/exams', '/exams/answer', '/exams/result', '/records', '/mistakes', '/mistakes/review',
+    '/mistakes/history/layout-audit', '/favorites', '/me',
+  ];
+  const viewportMatrix = [
+    { width: 1920, height: 1080, mobile: false },
+    { width: 1536, height: 1024, mobile: false },
+    { width: 1280, height: 800, mobile: false },
+    { width: 768, height: 1024, mobile: true },
+    { width: 390, height: 844, mobile: true },
+    { width: 360, height: 800, mobile: true },
+  ];
+  for (const viewport of viewportMatrix) {
+    await cdp('Emulation.setDeviceMetricsOverride', { ...viewport, deviceScaleFactor: 1 });
+    for (const path of routeMatrix) {
+      await navigate(path);
+      const layout = await evaluate(`({
+        path: location.pathname,
+        width: innerWidth,
+        clientWidth: document.documentElement.clientWidth,
+        visualWidth: visualViewport?.width ?? null,
+        documentWidth: document.documentElement.scrollWidth,
+        bodyText: document.body.innerText.trim().length,
+        rootChildren: document.querySelector('#root')?.children.length ?? 0,
+      })`);
+      if (path === '/mistakes' && viewport.width === 768) await capture('768x1024/mistakes-after-fix.png');
+      check(layout.width === viewport.width, `${path} viewport width mismatch at ${viewport.width}px: inner=${layout.width}, client=${layout.clientWidth}, visual=${layout.visualWidth}`);
+      check(layout.documentWidth <= layout.clientWidth, `${path} has horizontal overflow at ${viewport.width}x${viewport.height}: ${layout.documentWidth}px > ${layout.clientWidth}px`);
+      check(layout.bodyText > 0 && layout.rootChildren > 0, `${path} rendered a blank page at ${viewport.width}x${viewport.height}`);
+      if (path === '/' && (viewport.width === 1920 || viewport.width === 1280 || viewport.width === 768 || viewport.width === 360)) {
+        await capture(`${viewport.width}x${viewport.height}/home-after-login.png`);
+      }
+    }
+    console.log(`PASS ${routeMatrix.length} Web routes fit ${viewport.width}x${viewport.height} without horizontal overflow or blank screens`);
+  }
 
   check(failures.length === 0, failures.join('\n'));
   console.log('PASS Chromium reported no uncaught JavaScript exceptions');

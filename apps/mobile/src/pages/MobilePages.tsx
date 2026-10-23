@@ -150,6 +150,7 @@ type BarcodeScanSession = {
 };
 
 export function ConnectPage() {
+  const sameOriginWeb = usesSameOriginWebApi();
   const [address, setAddress] = useState(savedServerAddress());
   const [error, setError] = useState('');
   const [manualOpen, setManualOpen] = useState(false);
@@ -351,11 +352,18 @@ export function ConnectPage() {
   };
   return <Screen className="connect-screen" immersive>
     <Header back="/start" />
-    <div className="auth-title"><h1>连接服务器</h1><p>请选择连接方式，连接你的学习服务器</p></div>
-    <button className="connect-option" onClick={() => void scanServerQr()} disabled={scanning}><span className="connect-option-icon tone-blue"><IconQrcode size={28} /></span><span><strong>扫码连接</strong><small>扫描电脑端二维码<br />快速连接服务器</small></span><IconChevronRight className="option-arrow" size={18} /></button>
-    <button className="connect-option" aria-expanded={manualOpen} onClick={() => setManualOpen(value => !value)}><span className="connect-option-icon tone-blue"><IconLink size={26} /></span><span><strong>手动连接</strong><small>输入服务器地址<br />进行连接</small></span><IconChevronRight className="option-arrow" size={18} /></button>
-    {manualOpen && <section className="connect-manual"><label htmlFor="server-address">服务器地址</label><input id="server-address" value={address} onChange={e => setAddress(e.target.value)} placeholder="https://example.com" inputMode="url" autoCapitalize="none" />{error && <p className="form-error" role="alert">{error}</p>}<MobileButton onClick={connect} disabled={connecting}>{connecting ? '正在检查…' : '验证并连接'}</MobileButton></section>}
-    <Link className="auth-footnote" to={href('/login')}>连接后即可登录你的账号</Link>
+    <div className="auth-title"><h1>{sameOriginWeb ? '检查网页服务' : '连接服务器'}</h1><p>{sameOriginWeb ? '网页会通过当前安全站点访问学习服务' : '请选择连接方式，连接你的学习服务器'}</p></div>
+    {sameOriginWeb ? <section className="connect-web-origin" aria-label="当前网页服务">
+      <div><span className="connect-option-icon tone-blue"><IconShieldCheck size={25} /></span><span><strong>当前网页服务</strong><small>{window.location.origin}</small></span></div>
+      <p>浏览器使用当前 HTTPS 站点的同源连接，无需扫码或填写其他服务器地址。</p>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <MobileButton onClick={connect} disabled={connecting}>{connecting ? '正在检查…' : '验证当前服务'}</MobileButton>
+    </section> : <>
+      <button className="connect-option" onClick={() => void scanServerQr()} disabled={scanning}><span className="connect-option-icon tone-blue"><IconQrcode size={28} /></span><span><strong>扫码连接</strong><small>扫描电脑端二维码<br />快速连接服务器</small></span><IconChevronRight className="option-arrow" size={18} /></button>
+      <button className="connect-option" aria-expanded={manualOpen} onClick={() => setManualOpen(value => !value)}><span className="connect-option-icon tone-blue"><IconLink size={26} /></span><span><strong>手动连接</strong><small>输入服务器地址<br />进行连接</small></span><IconChevronRight className="option-arrow" size={18} /></button>
+      {manualOpen && <section className="connect-manual"><label htmlFor="server-address">服务器地址</label><input id="server-address" value={address} onChange={e => setAddress(e.target.value)} placeholder="https://example.com" inputMode="url" autoCapitalize="none" />{error && <p className="form-error" role="alert">{error}</p>}<MobileButton onClick={connect} disabled={connecting}>{connecting ? '正在检查…' : '验证并连接'}</MobileButton></section>}
+    </>}
+    <Link className="auth-footnote" to={href('/login')}>{sameOriginWeb ? '继续登录网页学习账号' : '连接后即可登录你的账号'}</Link>
     {scanning && <section className="barcode-scanner-modal" role="dialog" aria-modal="true" aria-label="扫描服务器二维码">
       <div className="barcode-scanner-top"><strong>扫描服务器二维码</strong><span>{scanMessage}</span></div>
       <div className="barcode-scanner-frame" aria-hidden="true" />

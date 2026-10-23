@@ -22,10 +22,34 @@ export const requireLocal: preHandlerHookHandler = async (request, reply) => {
   if (!isLoopbackAddress(request.raw.socket.remoteAddress)) return denied(reply, 403, 'LOCAL_ONLY', '管理入口仅允许本机访问。');
 };
 
+function cookieHostAllowed(request: FastifyRequest): boolean {
+  const host = request.headers.host?.toLowerCase();
+  if (!host) return false;
+  // Browsers ignore ports when storing cookies. Accept a browser cookie only on a configured
+  // Web origin (or the explicit loopback management listener), never on the public API port.
+  for (const origin of request.server.config.corsOrigins) {
+    try {
+      const url = new URL(origin);
+      if (['http:', 'https:'].includes(url.protocol) && url.host.toLowerCase() === host) return true;
+    } catch { /* malformed origins are ignored */ }
+  }
+  if (!isLoopbackAddress(request.raw.socket.remoteAddress)) return false;
+  const localHosts = new Set([
+    `${request.server.config.adminHost}:${request.server.config.adminPort}`.toLowerCase(),
+    `127.0.0.1:${request.server.config.adminPort}`,
+    `localhost:${request.server.config.adminPort}`,
+    `[::1]:${request.server.config.adminPort}`,
+  ]);
+  return localHosts.has(host);
+}
+
 export const requireSession: preHandlerHookHandler = async (request, reply) => {
   const credential = sessionCredentialFromRequest(request);
   const token = credential.token;
   const cookieToken = credential.fromCookie ? token : '';
+  if (cookieToken && request.server.config.environment === 'production' && !cookieHostAllowed(request)) {
+    return denied(reply, 403, 'COOKIE_HOST_MISMATCH', '浏览器会话不能用于此服务端口。');
+  }
   if (!token || token.length > 256) return denied(reply, 401, 'AUTH_REQUIRED', '请先登录。');
 
   const tokenHash = digestSessionToken(token);

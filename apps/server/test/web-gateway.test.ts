@@ -108,6 +108,7 @@ test('same-origin API proxy preserves cookie, Origin, CSRF, and Set-Cookie witho
   assert.equal(forwarded.headers.cookie, 'theory_session=fixture');
   assert.equal(forwarded.headers.origin, gatewayOrigin);
   assert.equal(forwarded.headers['x-csrf-token'], 'csrf-fixture');
+  assert.equal(forwarded.headers.host, new URL(gatewayOrigin).host);
   assert.equal(forwarded.headers['x-forwarded-for'], undefined);
   assert.equal(forwarded.headers['x-real-ip'], undefined);
 });

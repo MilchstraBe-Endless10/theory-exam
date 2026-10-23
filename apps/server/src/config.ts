@@ -1,4 +1,5 @@
 import { homedir } from 'node:os';
+import { isIPv4 } from 'node:net';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,6 +14,12 @@ export interface ServerConfig {
   cookieSecure: boolean;
   staticDir: string;
   environment: 'development' | 'test' | 'production';
+}
+
+export function isPrivateLanIPv4(address: string): boolean {
+  if (!isIPv4(address)) return false;
+  const [a, b] = address.split('.').map(Number);
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
