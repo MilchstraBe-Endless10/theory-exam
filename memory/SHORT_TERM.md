@@ -12,9 +12,9 @@
 - Gateway 浏览器 smoke 第一次因默认端口 8080 正被本机生产服务占用而未启动；测试脚本已改用临时可用端口并重跑通过。该失败是测试 fixture 端口冲突，不是生产 Web 故障。
 - README、PROJECT_GUIDE、CHANGELOG 与 P5-B 路线图已写明整体架构、形成阶段、每个可核实 dev.1–dev.10 变化/缺档、本轮实际 Web 缺陷和修复；两张 1536×1024 概念插画已加入 `docs/assets/`，明确标为 AI 插画而非应用截图。Web专项验收截图仍保存在 AI 输出 `图片与设计/理论考试练习系统/P5-B-Web端全面验收-20261023/`。
 - dev.10 APK 重新核验 SHA-256 `5d0089f664c63d52ade066679b38320c12b418de54613c716dd19a443e78ebb2`，aapt 确认 package/versionCode/versionName；包标记为 debuggable 和 Debug 测试签名，未重建或改版。API 明文流量关闭、APK 包含当前 API CA 资源；没有 CA/叶证书私钥进入 Git。当前工作区只精确提交代码、测试、项目文档与两张文档插画；本机 `.visual-test.init.gradle`、未引用 splash v3/v5、APK、CA、数据库和日志排除。
-- 本轮代码与文档已通过测试，待精确提交并普通推送到 `feat/p5-a-android-security`；dev.10 按私有 GitHub 测试预发布交付，不是 P6 正式 Release。其余 P5-B 收尾仍未整体标记完成，P6 未开始。
+- 本轮 Web 修复、测试和项目文档以提交 `8ea74f3712e9a7531b047144507a93dfc9bfa2cc` 普通推送到 `feat/p5-a-android-security`；GitHub 分支 SHA 与本地一致。README/PROJECT_GUIDE/CHANGELOG 及两张插画随该提交进入私有仓库，GitHub 项目简介也已更新。dev.10 以 `v1.0.0-dev.10-test` 发布为私有预发布，APK 与 `.sha256` 两个资产均已上传，并从 GitHub 下载复核摘要一致；这不是 P6 正式 Release。P5-B 其余收尾仍未整体标记完成，P6 未开始。
 - 公网截图位于 AI 输出 `报告与研究/理论考试练习系统/P5-B-Web验收-20261023/screenshots/public-post-deploy-final/`；完整 A/B 与真实业务截图位于 `screenshots/isolated-business-gateway-final-rerun5/`，修复后错题页和其他尺寸截图位于同目录各子目录。回滚快照位于 `deployment-snapshot/pre-web-fix-20261023/`。README、CHANGELOG、PROJECT_GUIDE、ROADMAP 已据实更新；P5-B 总阶段保持进行中。
-- 待完成：整理审查并提交本轮安全代码/测试/文档，普通 push 后核对远端 SHA；按用户授权在私有仓库创建 `v1.0.0-dev.10-test` 预发布并上传已核验 dev.10 APK 与 SHA 文件。P6 正式发行仍未开始。
+- P5-B 其余阶段事项仍未整体验收；Web 专项、本轮 GitHub 项目说明与 dev.10 测试预发布已完成。P6 正式发行、正式签名及完整更新链仍未开始。
 
 ## P5-B 真实账号与练习验收进展（2026-10-23 CST；Android 业务验收完成）
 - P5-B 三项 user systemd 服务 `theory-exam-p5b-api.service`、`theory-exam-p5b-web-lan.service`、`theory-exam-p5b-web-public.service` 均 active/enabled，`Restart=on-failure`（3 秒），Linger=yes。API/Web 公网与 LAN HTTPS health 均通过对应私有 CA 和 IP SAN 验证；Web `/admin`、`/api/admin/status` 404；管理 listener 仅绑定 `127.0.0.1:3001`。
