@@ -1,6 +1,6 @@
 # P5 本机运行、安全、更新与备份准备
 
-本文只提供待用户审阅的模板和隔离验证结果。本阶段没有安装或启用 systemd 服务，没有修改正式 SQLite、证书、frp 或主机网络配置。
+本文前半部分保留 P5-A 阶段的设计与模板记录；实际 P5-B 部署已于 2026-10-22 获授权执行。最新生产状态、定时备份与仍需处理的权限阻塞见文末“P5-B 部署与收尾核验（2026-10-23）”。
 
 ## 监听入口
 
@@ -168,3 +168,21 @@ Android 开发包身份当前为 `com.theoryexam.mobile.dev`，不代表正式�
 - P5-A 其余要求由本轮实际回归及既有隔离验收闭合：服务端 59/59（含备份/恢复、listener 隔离、HttpOnly Cookie/CSRF、更新元数据和 SHA 校验）；移动端 UI smoke 20 项、会话竞态 6/6；P1–P5 浏览器流程与 Web Gateway smoke；`systemd-analyze verify deploy/systemd/*.service deploy/systemd/*.timer`。本轮 `mobile/server typecheck/build`、Capacitor sync、普通 Android `assembleDebug`、APK 身份/内容审计和 `git diff --check` 均通过。
 - 正式 SQLite 仍为 V4，未操作正式账号、MeFrp、生产 TLS、systemd 服务或公网端口。P5-A 已完成；P5-B 的真实部署和 V4→V6 正式迁移仍需独立授权。P6 的正式 Release、私有 Release 双版本完整安装升级链不计入 P5-A。Issue #7 涵盖整个 P5，继续保持 OPEN。
 - 统一报告：AI 输出目录 `报告与研究/理论考试练习系统/P5-A-最终验收-20261022-01/P5-A最终验收判定与Git收尾报告-20261022.md`。dev.9 扫码报告与截图仍保留于 `P5-A-startScan-dev9-20261022-01` 配套目录。
+
+## P5-B 部署与收尾核验（2026-10-23）
+
+以下是当前实际运行状态，用于覆盖本文早期“尚未部署/待审批”的历史描述；它不表示 P5-B 已整体通过。
+
+- API、Web 公网、Web LAN 三项 user systemd 服务均 active/enabled，`Restart=on-failure`、3 秒重启间隔、重启计数 0；`loginctl` 显示 `Linger=yes`。管理 listener 仍仅绑定 `127.0.0.1:3001`。
+- `theory-exam-p5b-maintenance.timer` 已启用，每日 02:00（最多随机延迟 30 分钟）执行 `apps/server/scripts/p5b-maintenance.mjs`。该任务使用 SQLite `VACUUM INTO`，验证本地备份后复制到独立备份挂载，并在副本上检查完整性、外键和迁移状态；每日同时验证 API/Web IP SAN 证书链及到期时间。
+- 维护 unit 使用 `~/.config/theory-exam/p5b-deploy-20261022/maintenance.env`（0600；仅路径/IP/端口参数）和既有 `api.env`（0600）。备份目标为 `/mnt/Server_Data_Backup/P5B-Production-Backups/theory-exam-v6`（目录 0700、备份文件 0600）。截至本次核验，最新副本为 1,232,896 bytes；隔离恢复后 `integrity_check=ok`、外键违规 0、迁移状态 V6 ready、题目 1,283、启用题库 1。备份设备与根 NVMe 不同，但仍在同一主机，不能抵御整机/场地故障。
+- 当前 API/Web 叶证书 SAN 含 `118.24.61.190`、`192.168.0.107`、`127.0.0.1`，到期日 2027-11-23；两组私有 CA 到期日 2036-10-19。私钥目录 0700，私钥文件 0600。日常任务在叶证书剩余 60 天、CA 剩余 180 天时报告失败并写入 journal；不会自动重新签发或轮换。
+- 普通 dev.10 仍使用已有包和 API CA，未修改 Android 源码/证书身份/包版本。Gradle 支持以 `THEORY_API_CA_FILE` 从仓库外注入公开 API CA；归档公开证书与 APK 资源一致，私钥未进入 Git。
+- 2026-10-23 严格 CA 检查：公网 API `https://118.24.61.190:30946/api/health`、Web `https://118.24.61.190:10393/api/health` 和本机 loopback/LAN listener 全部返回 200、migrationVersion 6；公网 API 管理状态、Web `/admin` 和 `/api/admin/status` 均 404。Web 同源 preflight 204，跨端口 Origin 403；直连 API 的跨端口 Origin 为 403。API 3000 的 HTTP 明文请求被服务端拒绝。
+- 运行时代码与源码基线：当前分支 `aa7cfef4f40b335d2e69c5dec54e350743159215`；隔离 TypeScript build 的 27 个 JavaScript 文件与当前 `apps/server/dist` 字节一致。Gateway 进程的启动时间为 11:47；11:43 的部署快照与当前 dist 字节一致，且实际公网 preflight 行为符合 Host/Origin 修复。旧的 11:29 快照不代表当前进程版本。未因本轮重启 API 或 Web 服务。
+- 网络收尾尚未通过：`eno1` 当前 `192.168.0.107/24`，NetworkManager `ipv4.method=auto`，路由器保留租约未证实。证书和 Android Network Security Config 都绑定该 LAN IP；更换 IP 后需要重签服务叶证书并更新 Android 精确 trust scope/版本。
+- `nftables` unit active。可读的静态配置 INPUT 默认 DROP，仅放行 established、loopback、ICMP 与 SSH，未明确放行 LAN TCP 3000/8080；有效 ruleset 因当前用户无 root 权限未能读取。因此本机自连健康不能代替 LAN 其他设备访问验收；必须由管理员确认规则，再仅允许 `eno1` 上受信 LAN 子网访问 3000/8080，并确认 3001 仍不可达。没有改系统防火墙。
+- MeFrp 0.67.1 的两条客户端进程都在运行，公网端点功能验证通过；两个进程仍以 `-t` argv 参数提供 token。未通过 `-c` 模式重建配置，也未重启或轮换凭据，以免在无已验证映射/恢复方案时中断现有 TCP 服务。token 值没有进入文档、日志或 Git。
+- 到 MeFrp 节点 `118.24.61.190` 的当前路由经 `tun0` / `table 2022`，源地址 `10.20.0.1`；两条公网 health 仍成功。该策略路由的所有者和预期用途未核实，需由维护者确认它是预期的 MeFrp 出站路径。公网端点功能有实测，但客户端快捷启动未提供可读映射文件，localIP/localPort 仍不能从本机配置直接确认。
+- 日志当前由 user systemd/journald 收集；聚合用户 journal 占用 208.7 MB，系统未配置本项目专用的 retention 上限。没有修改全局 journald 策略，以免影响其他服务。
+- P5-B 阶段仍未完成，准确待办为：路由器管理员确认固定 LAN DHCP 租约；管理员审阅并应用最小 LAN firewall allowlist、从另一台 LAN 设备验证；维护者确认 MeFrp 支持的受限 token 文件配置并安排可回滚的逐隧道迁移。正式签名 APK、正式 GitHub Release、APK 更新安装完整链和最终发布 QA 属于 P6，不作为 P5-B 阻塞。

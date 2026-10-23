@@ -2,6 +2,15 @@
 
 > 交接快照；不得记录真实密码、密码哈希或凭据文件内容。
 
+## P5-B 最终运维收尾（2026-10-23 CST；阶段仍有具体阻塞）
+- 基线：`feat/p5-a-android-security`，提交 `aa7cfef4f40b335d2e69c5dec54e350743159215`；fetch 后远端一致。dev.10 与 Web 全站验收不重跑。
+- 部署代码核验：API/Web 三项 user service active/enabled，Restart=on-failure 3s、NRestarts=0、Linger=yes。隔离 `tsc` build 输出的 27 个 JavaScript 文件与当前 `apps/server/dist` 完全一致；当前 Web Gateway 源码含 Host 保留修复，公共 Web 同源 OPTIONS 204、跨端口 Origin 403，确认当前运行行为符合修复。只复用此前 Web 业务与 96 视口验收。
+- 备份补齐：新增 `apps/server/scripts/p5b-maintenance.mjs` 与 `deploy/systemd/user/theory-exam-p5b-maintenance.{service,timer}`；用户级 timer 已 enable/active，每日运行 SQLite `VACUUM INTO` 一致性备份、跨到独立物理盘 ext4 LVM，并校验完整性/外键/V6 状态和 TLS 链/IP SAN/到期时间。独立配置 `~/.config/theory-exam/p5b-deploy-20261022/maintenance.env` 0600，仅含路径与端口参数。最新归档 `daily-2026-10-23T04-36-47-973Z-fcbd1479.sqlite`，1,232,896 bytes、0600；隔离恢复后 integrity ok、FK=0、V6 ready、题目1283、启用题库1。
+- 证书：API/Web leaf 到 2027-11-23，API/Web CA 到 2036-10-19；私钥目录 0700、私钥文件 0600。APK 的公开 API CA 资源与外置 `api-ca.pem` SHA 相同且 `.pem` 被 Git 忽略；Gradle 支持 `THEORY_API_CA_FILE` 注入。未修改 Android/APK/签名，未重建 dev.10。
+- 定向验证：严格 CA 下公网 API `30946`、Web `10393`、本机 loopback/LAN health 均 200、V6；公网 API 管理路径、Web `/admin`、Web `/api/admin/status` 均 404；API port HTTP 明文请求被拒。Cookie/Origin 测试 2/2：Web同源204，跨端口403。`node --check`、`systemd-analyze verify`、隔离 Server build、`git diff --check` 通过。
+- 未完成阻塞：eno1=`192.168.0.107/24`，NetworkManager `ipv4.method=auto`，没有路由器静态租约证据；nftables active，静态 INPUT policy drop，仅 loopback/established/ICMP/SSH规则，无 LAN 3000/8080 allow；当前用户不能读取有效 ruleset，也没有 root 写权限。因此 LAN peer 访问未验收，不能靠本机 loopback/自连当作通过。两条 MeFrp 进程仍通过 `-t` argv 含 token；当前连接正常，但未验证无中断迁移到 `-c` 配置文件，故未重启/轮换。MeFrp 节点出站当前经 `tun0/table 2022`，端点健康但此路由预期未核实；本机未找到可读 localIP/localPort 配置。P5-B 维持未完成，P6 正式包签名/Release/完整更新链不计入阻塞。
+- 防火墙配置、DHCP 保留、MeFrp token 值均未写入报告/Git；`apps/mobile/android/.visual-test.init.gradle`、`splash-mountain-road-v3.png`、`splash-mountain-road-v5.png` 三个既存用户未跟踪文件保持原样且不提交。详细报告存于 AI 输出 `报告与研究/理论考试练习系统/P5-B-最终收尾-运维核验-20261023-01/`。
+
 ## P5-B Web 全站修复与公网复验（2026-10-23 CST）
 - Web 修复已构建并部署；`theory-exam-p5b-api.service`、`theory-exam-p5b-web-public.service`、`theory-exam-p5b-web-lan.service` 重启后均 active。API/Web 健康 HTTPS 均 HTTP 200、证书校验结果 0；未修改 DB、证书、MeFrp 或服务配置。
 - 修复浏览器 `/connect` 的同源服务验证路径、桌面错题复习选项/按钮样式与 1100px 响应断点；收紧同 IP 不同端口 Cookie 使用与 Origin/Host 匹配，Gateway 保留浏览器 Host、继续清除客户端伪造的 Forwarded/X-Forwarded/X-Real-IP。

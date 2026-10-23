@@ -1,9 +1,9 @@
 # 中期记忆（阶段 / 里程碑）
 
-更新时间：2026-10-23（P5-B Web 修复部署与浏览器复验）
+更新时间：2026-10-23（P5-B 运维收尾核验；核心部署通过，尚有网络/凭据安全阻塞）
 
 ## 当前阶段
-**P0、P0-M、P1、P2、P2-R、P3、P4、P5-A 均已完成验收。P5-A 最终普通 APK 基线为 `com.theoryexam.mobile.dev` dev.9/versionCode 9，SHA-256 `3db11faf2ffd96118f79f5582b7a82fa6ba739c259b9cde96081f7a6d8e73ad5`；真实 Android `startScan()`/ML Kit/Bridge/地址处理及相机生命周期通过。P5-B 已部署正式 user systemd、MeFrp 双 TCP、IP HTTPS、SQLite V6 和 1,283 题；dev.10 登录、练习、收藏和会话恢复通过。2026-10-23 Web 修复已部署，严格 CA 公网 Chromium 16 路由 × 6 视口通过，隔离真实 API 的练习/错题/考试业务流程通过；P5-B 总阶段仍按路线图跟踪。P6 正式签名和完整升级发布链未开始。**
+**P0、P0-M、P1、P2、P2-R、P3、P4、P5-A 均已完成验收。P5-A 最终普通 APK 基线为 `com.theoryexam.mobile.dev` dev.9/versionCode 9，SHA-256 `3db11faf2ffd96118f79f5582b7a82fa6ba739c259b9cde96081f7a6d8e73ad5`；真实 Android `startScan()`/ML Kit/Bridge/地址处理及相机生命周期通过。P5-B 核心部署已完成：三项 user systemd 服务、MeFrp 双 TCP、IP HTTPS、SQLite V6 与 1,283 题；dev.10 登录/真实练习/收藏/会话恢复和 Web 全站既有验收通过。本轮新增跨物理盘一致性备份及每日证书检查 timer，并完成隔离恢复。P5-B 仍未关闭：LAN 地址未固定且 nftables 有效规则无法读取、静态规则没有 LAN 3000/8080 明确放行；两个 MeFrp 客户端 token 仍在 argv，切换凭据加载方式缺少已验证配置与安全维护窗口。P6 正式签名和完整更新链未开始，且不属于 P5-B 阻塞。**
 
 ## Git 开发流程（长期约束）
 - 正式仓库：`https://github.com/MilchstraBe-Endless10/theory-exam`，保持 Private。每次开发开始前检查工作区/分支/远端并 fetch；阶段验证通过后默认普通提交、推送并核验远端 SHA。
@@ -20,8 +20,15 @@
 - [x] P3 模拟考试、断线恢复、成绩历史（真实题库隔离导入、浏览器验收与 GitHub 同步完成，2026-10-19）
 - [x] P4 错题复习和学习分析（V5 轮次、三态掌握、只读 db:status 修复、浏览器验收完成）
 - [x] P5-A Android APP 与网络安全、备份和更新（2026-10-22；dev.9 正式实时扫码与本轮同哈希重建通过；dev.7 核心业务/会话/收藏/考试和 12 屏未受影响验收复用；server 59/59、mobile UI 20 项、session 6/6、浏览器/Gateway smoke、APK 隔离和 systemd 模板检查通过；阶段提交 `84fa7d6b796a74433728ef3f8ac98644c096a970` 已推送）
-- [ ] P5-B 正式 systemd、可信 HTTPS、frp 与 V4→V6 数据库部署及总阶段收尾（服务、数据库与 Web 已部署，P5-B 总阶段尚未关闭）
+- [ ] P5-B 正式 systemd、可信 HTTPS、frp 与 V4→V6 数据库部署及总阶段收尾（核心部署和业务验收完成；收尾受 LAN DHCP/防火墙核验与 MeFrp argv 凭据风险阻塞）
 - [ ] P6 系统回归、发行准备与 GitHub 发布
+
+## P5-B 运维收尾核验（2026-10-23）
+- 三个生产 user services 均 active/enabled、`Restart=on-failure`（3 秒）、重启计数 0，Linger=yes；新增 `theory-exam-p5b-maintenance.timer` 每日运行，先用 SQLite `VACUUM INTO` 生成 V6 一致性备份，再复制到独立 `/mnt/Server_Data_Backup` 文件系统并验证。
+- 最新跨盘备份 `daily-2026-10-23T04-36-47-973Z-fcbd1479.sqlite` 为 0600；隔离恢复后 `integrity_check=ok`、FK 违规 0、迁移状态 ready、题目 1,283、启用题库 1。备份盘位于独立于 root NVMe 的双盘 ext4 LVM；这不是异地备份。
+- API/Web 叶证书有效至 2027-11-23，CA 有效至 2036-10-19；私钥目录 0700、密钥 0600。timer 每日核验链与公网/LAN/loopback IP SAN，并在叶证书 60 天、CA 180 天内到期时使 unit 失败并写 journal；未自动重签/轮换。
+- 严格 CA 下公网端口 30946/10393 和本机 loopback/LAN listeners 的 health 都返回 200、migrationVersion=6；公网管理页面/API 404。Cookie/Origin 对同 IP 不同端口检查 2/2 通过（Web 同源 204、跨端口 403）。
+- 仍需权限/外部操作：NetworkManager 为 DHCP auto，路由器静态租约未确认；`nftables` active，配置文件 INPUT policy drop 且未明确允许 LAN 3000/8080，当前用户不能读取有效 ruleset/修改系统防火墙；两条 MeFrp 进程通过 `-t` argv 传递认证 token，未贸然重启隧道或轮换凭据；到 MeFrp 节点流量经 `tun0/table 2022`，策略路由用途未确认，快捷启动配置也未暴露 localIP/localPort。P5-B 不得标记完成，直到 LAN 固定地址/防火墙和安全凭据加载方式有实际证据。
 
 ## 本阶段验收
 1. 可执行的本地 dev 启动脚本。

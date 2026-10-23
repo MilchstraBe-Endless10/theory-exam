@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Theory Exam P5-B database backup and TLS certificate check
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+RandomizedDelaySec=30m
+Unit=theory-exam-p5b-maintenance.service
+
+[Install]
+WantedBy=timers.target
