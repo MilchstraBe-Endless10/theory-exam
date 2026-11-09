@@ -2,6 +2,26 @@
 
 > 交接快照；不得记录真实密码、密码哈希或凭据文件内容。
 
+## main 主线整合（2026-11-09 CST）
+- 任务：把 P5-A / P5-B 已验收成果从 `feat/p5-a-android-security` 正式合入 `main`，并重写面向公开的 README。
+- 基线：fetch 后 `origin/main`=`b6cdb05`（停在 P4），`origin/feat/p5-a-android-security`=`1c060d2`；功能分支 19 commits ahead / 0 behind，merge-base 即 main HEAD，`git merge-tree` 无冲突标记。
+- 本轮新增提交 `5cf2706`（docs(readme)）：README 全量重写 + `docs/assets/screenshots/` 8 张真实界面截图（桌面 4 + 移动 4，来自 P5-B 隔离真实题库验收，非设计稿）。已普通推送到功能分支，远端 SHA 与本地一致。
+- PR #8 已创建并合并：<https://github.com/MilchstraBe-Endless10/theory-exam/pull/8>；合并方式 merge commit，Merge Commit SHA `2dffb069b8262dc881cf29180833e5c5e564320a`，合并后 main SHA 相同且与远端一致。未强推、未删功能分支、未动 dev.10 预发布。
+- 合并前（feat HEAD 隔离 worktree + `npm ci`）与合并后（main HEAD 隔离 worktree + `npm ci`）各跑一轮：服务端 typecheck/build 通过、`test` 62/62、`test:browser` 12/12、`test:web:browser` 10/10；客户端 typecheck/build 通过、UI smoke 20/20、会话 6/6；Android `:app:assembleDebug` BUILD SUCCESSFUL（36.1MB，Debug 签名，含 `res/raw/theory_exam_api_ca.pem`）。
+- 安全审计：全历史 blob 扫描无 `PRIVATE KEY`/`ghp_`/`AKIA` 命中；受跟踪文件无 `.env`/证书/私钥/keystore/SQLite/Excel。CA 构建输入保持仓库外读取（`THEORY_API_CA_FILE`）。
+- 保留未跟踪文件：`apps/mobile/android/.visual-test.init.gradle`、`apps/mobile/public/splash-mountain-road-v3.png`、`-v5.png`（本机临时产物，未纳入提交）。
+- 环境排障（已记入 MID_TERM）：Gradle transforms 缓存 metadata 损坏 → 删 `~/.gradle/caches/8.14.3/transforms` + `--stop`；插件 `node_modules/@capacitor/*/android/build` 残留 → 清后重建。
+- 未完成项保持：P5-B 三项运维收尾（LAN DHCP 静态租约、nftables LAN 3000/8080 allowlist + 第二台 LAN 设备验收、MeFrp `-t` argv token 迁移）如实保留，不因合并标记完成；Issue #7 保持 OPEN；P6 未开始。
+- 未触动：正式 SQLite V6、MeFrp、生产证书、三个运行中 user unit。
+
+## 本地服务重启（2026-10-25 CST）
+- 按用户再次请求重启 API、局域网 Web 与公网入口 Web 三个 P5-B user units。三个 unit 均 active/running、`NRestarts=0`；使用对应私有 CA 验证 API loopback/LAN 与 Web LAN/loopback 的 `/api/health` 均 HTTP 200。
+- 本次健康检查立即通过；未重启维护 timer，未改代码、配置、证书、MeFrp 或数据库内容。
+
+## 本地服务重启（2026-10-24 CST）
+- 按用户请求重启 `theory-exam-p5b-api.service`、`theory-exam-p5b-web-lan.service` 和 `theory-exam-p5b-web-public.service`；维护 timer 未重启，未改代码、配置、证书、MeFrp 或数据库内容。
+- API 启动监听约延迟 2 分钟；期间 API 连接被拒、两个 Gateway 暂时返回 502。随后 API 与三个 unit 均恢复 active/running。使用对应私有 CA 验证 API loopback/LAN、Web LAN 与公网 Gateway loopback 的 `/api/health` 均 HTTP 200。
+
 ## P5-B 最终运维收尾（2026-10-23 CST；阶段仍有具体阻塞）
 - 基线：`feat/p5-a-android-security`，提交 `aa7cfef4f40b335d2e69c5dec54e350743159215`；fetch 后远端一致。dev.10 与 Web 全站验收不重跑。
 - 部署代码核验：API/Web 三项 user service active/enabled，Restart=on-failure 3s、NRestarts=0、Linger=yes。隔离 `tsc` build 输出的 27 个 JavaScript 文件与当前 `apps/server/dist` 完全一致；当前 Web Gateway 源码含 Host 保留修复，公共 Web 同源 OPTIONS 204、跨端口 Origin 403，确认当前运行行为符合修复。只复用此前 Web 业务与 96 视口验收。
