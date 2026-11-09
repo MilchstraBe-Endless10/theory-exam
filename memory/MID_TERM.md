@@ -1,12 +1,30 @@
 # 中期记忆（阶段 / 里程碑）
 
-更新时间：2026-10-23（P5-B 运维收尾核验；核心部署通过，尚有网络/凭据安全阻塞）
+更新时间：2026-11-09（main 主线整合完成；P5-B 仍有三项运维收尾阻塞）
+
+## main 主线整合（2026-11-09）
+- 目标达成：`main` 此前停在 P4（`b6cdb05`），现正式接收 P5-A / P5-B 全部成果，重新成为可信主线。
+- PR [#8](https://github.com/MilchstraBe-Endless10/theory-exam/pull/8) `feat/p5-a-android-security` → `main`，普通 merge commit，无强推。
+- Merge Commit SHA：`2dffb069b8262dc881cf29180833e5c5e564320a`；合并前该分支领先 main **19 个提交 / 133 个文件（+7317 / −288）**，0 behind，merge-base 即 main 旧 HEAD，无冲突。
+- 保留成果：原功能分支未删除；`v1.0.0-dev.10-test` 测试预发布未改动；未创建正式 Release；P6 未开始。
+- 未触动：正式 SQLite 仍为 V6 现状、未迁移未重置；MeFrp、生产证书、三个运行中 user unit 均未改。
+
+### 合并后（main HEAD 隔离干净检出）验证
+- 服务端 typecheck / build 通过；`test` **62/62**；`test:browser` **12/12**；`test:web:browser` **10/10**（16 路由 × 6 视口，无未捕获异常）。
+- 客户端 typecheck / build 通过；`test:ui` **20/20**；会话回归 **6/6**。
+- Android `:app:assembleDebug` 构建成功（合并前在 feat HEAD 同环境验证）。
+- 结论：合并后 main 的 tree 与合并前验收基线 `5cf2706` 完全相同，行为一致。
+
+### 本机环境备注（可复用的排障结论）
+- Gradle `~/.gradle/caches/8.14.3/transforms` 曾出现 `metadata.bin` 不可读的缓存损坏，表现为 `checkDebugAarMetadata` 报 "Could not read workspace metadata"。修复：删该 transforms 目录 + `./gradlew --stop` 后重建。
+- 同一版本重复构建后，`node_modules/@capacitor/*/android/build` 残留会导致 `bundleLibRuntimeToDirDebug` 报 "class already exists"。修复：清掉插件 android/build 目录再构建。
+- `local-input/` 为 Git 忽略；隔离检出跑 `exam.test.ts` / `review.test.ts` 前需把本机 Excel 复制进去，否则用例按设计失败（不是代码回归）。
 
 ## 当前阶段
 **P0、P0-M、P1、P2、P2-R、P3、P4、P5-A 均已完成验收。P5-A 最终普通 APK 基线为 `com.theoryexam.mobile.dev` dev.9/versionCode 9，SHA-256 `3db11faf2ffd96118f79f5582b7a82fa6ba739c259b9cde96081f7a6d8e73ad5`；真实 Android `startScan()`/ML Kit/Bridge/地址处理及相机生命周期通过。P5-B 核心部署已完成：三项 user systemd 服务、MeFrp 双 TCP、IP HTTPS、SQLite V6 与 1,283 题；dev.10 登录/真实练习/收藏/会话恢复和 Web 全站既有验收通过。本轮新增跨物理盘一致性备份及每日证书检查 timer，并完成隔离恢复。P5-B 仍未关闭：LAN 地址未固定且 nftables 有效规则无法读取、静态规则没有 LAN 3000/8080 明确放行；两个 MeFrp 客户端 token 仍在 argv，切换凭据加载方式缺少已验证配置与安全维护窗口。P6 正式签名和完整更新链未开始，且不属于 P5-B 阻塞。**
 
 ## Git 开发流程（长期约束）
-- 正式仓库：`https://github.com/MilchstraBe-Endless10/theory-exam`，保持 Private。每次开发开始前检查工作区/分支/远端并 fetch；阶段验证通过后默认普通提交、推送并核验远端 SHA。
+- 正式仓库：`https://github.com/MilchstraBe-Endless10/theory-exam`。`main` 为唯一可信主线，开发成果经 PR 普通合并；2026-11-09 已把 P5-A/P5-B 成果经 PR #8 合入 main。每次开发开始前检查工作区/分支/远端并 fetch；阶段验证通过后默认普通提交、推送并核验远端 SHA。
 - 提交包含阶段编号和实际修改；远端变化、无关改动、验证失败或安全风险时暂停。禁止强推、覆盖历史、公开仓库、正式 Release 和敏感文件入库；不得删除、重置、覆盖未经确认的用户改动。
 - 每轮汇报提供 GitHub commit 链接和同步状态。
 - P1 起每阶段依序完成同步检查、开发、测试、安全检查、提交、推送、GitHub 验证、记忆更新和汇报；未完成阶段可推送到独立开发分支，验收通过后普通合入 `main`。
