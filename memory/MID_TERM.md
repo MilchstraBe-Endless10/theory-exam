@@ -24,7 +24,7 @@
 **P0、P0-M、P1、P2、P2-R、P3、P4、P5-A 均已完成验收。P5-A 最终普通 APK 基线为 `com.theoryexam.mobile.dev` dev.9/versionCode 9，SHA-256 `3db11faf2ffd96118f79f5582b7a82fa6ba739c259b9cde96081f7a6d8e73ad5`；真实 Android `startScan()`/ML Kit/Bridge/地址处理及相机生命周期通过。P5-B 核心部署已完成：三项 user systemd 服务、MeFrp 双 TCP、IP HTTPS、SQLite V6 与 1,283 题；dev.10 登录/真实练习/收藏/会话恢复和 Web 全站既有验收通过。本轮新增跨物理盘一致性备份及每日证书检查 timer，并完成隔离恢复。P5-B 仍未关闭：LAN 地址未固定且 nftables 有效规则无法读取、静态规则没有 LAN 3000/8080 明确放行；两个 MeFrp 客户端 token 仍在 argv，切换凭据加载方式缺少已验证配置与安全维护窗口。P6 正式签名和完整更新链未开始，且不属于 P5-B 阻塞。**
 
 ## Git 开发流程（长期约束）
-- 正式仓库：`https://github.com/MilchstraBe-Endless10/theory-exam`。`main` 为唯一可信主线，开发成果经 PR 普通合并；2026-11-09 已把 P5-A/P5-B 成果经 PR #8 合入 main。每次开发开始前检查工作区/分支/远端并 fetch；阶段验证通过后默认普通提交、推送并核验远端 SHA。
+- 正式仓库：`https://github.com/MilchstraBe-Endless10/theory-exam`，**2026-11-09 已转为 Public**（公开前完成生产坐标脱敏，见 SHORT_TERM）。`main` 为唯一可信主线，开发成果经 PR 普通合并；2026-11-09 已把 P5-A/P5-B 成果经 PR #8 合入 main。每次开发开始前检查工作区/分支/远端并 fetch；阶段验证通过后默认普通提交、推送并核验远端 SHA。
 - 提交包含阶段编号和实际修改；远端变化、无关改动、验证失败或安全风险时暂停。禁止强推、覆盖历史、公开仓库、正式 Release 和敏感文件入库；不得删除、重置、覆盖未经确认的用户改动。
 - 每轮汇报提供 GitHub commit 链接和同步状态。
 - P1 起每阶段依序完成同步检查、开发、测试、安全检查、提交、推送、GitHub 验证、记忆更新和汇报；未完成阶段可推送到独立开发分支，验收通过后普通合入 `main`。
