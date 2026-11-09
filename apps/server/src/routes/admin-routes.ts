@@ -116,7 +116,6 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/admin/banks', { preHandler: adminHooks }, async () => ({ items: listBanks(app.db, false) }));
-  app.get('/api/banks', { preHandler: app.requireSession }, async () => ({ items: listBanks(app.db, true) }));
 
   app.get('/api/admin/imports', { preHandler: adminHooks }, async () => ({
     items: app.db.prepare(`SELECT id, source_filename AS sourceFilename, status, selected_sheet AS selectedSheet,

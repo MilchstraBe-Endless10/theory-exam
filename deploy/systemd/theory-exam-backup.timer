@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Theory Exam daily database backup
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+RandomizedDelaySec=30m
+Unit=theory-exam-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -1,7 +1,10 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { App as NativeApp } from '@capacitor/app';
+import { Capacitor, type PluginListenerHandle } from '@capacitor/core';
+import { BarcodeFormat, BarcodeScanner, LensFacing } from '@capacitor-mlkit/barcode-scanning';
 import {
-  IconArrowLeft, IconBell, IconBook, IconChartBar, IconCheck,
-  IconChevronRight, IconCircleCheck, IconClockHour4, IconDots, IconFileText,
+  IconBell, IconBook, IconBookFilled, IconChartBar, IconCheck,
+  IconChevronLeft, IconChevronRight, IconCircleCheck, IconClockHour4, IconDots, IconFileText,
   IconGridDots, IconEye, IconEyeOff, IconInfoCircle, IconLink, IconLock,
   IconLogout, IconPencil, IconQrcode, IconRefresh, IconShieldCheck,
   IconStar, IconTrophy, IconUser, IconUserFilled, IconWifi, IconX,
@@ -9,13 +12,14 @@ import {
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { useBanks } from '../services/banks';
-import { ApiError, apiRequest, clearSession, persistentSession, previewMode, savedServerAddress, saveServerAddress, saveSession, type ApiSession } from '../services/api';
+import { ApiError, apiRequest, clearSession, persistentSession, previewMode, savedServerAddress, saveServerAddress, saveSession, usesSameOriginWebApi, type ApiSession } from '../services/api';
 import {
   createPracticeSession, exitPracticeSession, getActivePracticeSession, getFavorites, getPracticeQuestion,
   getPracticeResult, getPracticeSession, movePracticePosition, resumePracticeSession, setQuestionFavorite,
   submitPracticeAnswer, type PracticeMode, type PracticeProgress,
 } from '../services/practice';
 import { useMistakeStats } from '../services/reviews';
+import { checkForUpdate, downloadAndOpenUpdate, type CheckedUpdate } from '../services/updates';
 
 const preview = import.meta.env.DEV && new URLSearchParams(window.location.search).get('preview') === '1';
 const href = (path: string) => preview ? `${path}${path.includes('?') ? '&' : '?'}preview=1` : path;
@@ -25,7 +29,7 @@ export function PreviewBadge() {
 }
 
 function StatusBar() {
-  return <div className="mobile-statusbar" aria-hidden="true"><span>9:41</span><span className="status-icons"><IconWifi size={15} /><span className="signal-bars"><i /><i /><i /><i /></span><span className="battery"><i /></span></span></div>;
+  return <div className="mobile-statusbar" aria-hidden="true"><span>9:41</span><span className="status-icons"><span className="signal-bars"><i /><i /><i /><i /></span><IconWifi size={15} /><span className="battery"><i /></span></span></div>;
 }
 
 function Screen({ children, immersive = false, className = '', dataQuestionId }: { children: ReactNode; immersive?: boolean; className?: string; dataQuestionId?: string }) {
@@ -33,7 +37,7 @@ function Screen({ children, immersive = false, className = '', dataQuestionId }:
 }
 
 function Header({ title, back = '/', right }: { title?: string; back?: string; right?: ReactNode }) {
-  return <header className="mobile-page-header"><Link className="back-button" to={href(back)} aria-label="返回"><IconArrowLeft size={22} /></Link>{title ? <h1>{title}</h1> : <span />}{right ?? <span className="header-placeholder" />}</header>;
+  return <header className="mobile-page-header"><Link className="back-button" to={href(back)} aria-label="返回"><IconChevronLeft size={24} /></Link>{title ? <h1>{title}</h1> : <span />}{right ?? <span className="header-placeholder" />}</header>;
 }
 
 function Toast({ message }: { message: string }) {
@@ -68,12 +72,12 @@ function MobileHomePage({ progress, progressLoading, progressError }: { progress
     { title: '日常练习', icon: IconPencil, to: '/practice', tone: 'green' },
     { title: '模拟考试', icon: IconFileText, to: '/exams', tone: 'blue' },
     { title: '错题复习', icon: IconFileText, to: '/mistakes', tone: 'red' },
-    { title: '我的收藏', icon: IconStar, to: '/me', tone: 'amber' },
+    { title: '我的收藏', icon: IconStar, to: '/favorites', tone: 'amber' },
     { title: '考试记录', icon: IconClipboardIcon, to: '/records', tone: 'blue' },
     { title: '题库切换', icon: IconRefresh, to: '/me', tone: 'green' },
   ];
   return <Screen className="home-screen">
-    <header className="home-brand"><span className="home-brand-mark"><IconBook size={20} /></span><strong>理论考试</strong><button aria-label="通知" onClick={() => notice.notify('当前没有新通知')}><IconBell size={20} /></button></header>
+    <header className="home-brand"><span className="home-brand-mark"><IconBookFilled size={20} /></span><strong>理论考试</strong><button aria-label="通知" onClick={() => notice.notify('当前没有新通知')}><IconBell size={20} /></button></header>
     <div className="home-greeting"><h1>{preview ? '你好，学习用户' : user ? `你好，${user.username}` : '你好，欢迎学习'}</h1><p>{preview ? '从今天的进步开始。' : bank ? `${bank.name} · 学习记录由本地服务端保存` : error || (loading ? '正在读取已启用题库…' : user ? '本机服务端暂无已启用题库' : '连接并登录本地服务后读取题库')}</p></div>
     <PreviewBadge />
     <section className="mobile-stat-grid" aria-label="学习概况">
@@ -87,6 +91,9 @@ function MobileHomePage({ progress, progressLoading, progressError }: { progress
       <div className="mobile-progress-track"><span style={{ width: `${preview ? 33.2 : progress?.explorationRate ?? 0}%` }} /></div>
       <MobileButton to={href('/practice')}>继续刷题 <IconChevronRight size={18} /></MobileButton>
     </section>
+    <section className="mobile-quick-section"><div className="mobile-quick-grid">
+      {quick.map(({ title, icon: Icon, to, tone }) => <Link className="mobile-quick-link" key={title} to={href(to)}><span className={`quick-icon tone-${tone}`}><Icon size={20} /></span><span>{title}</span></Link>)}
+    </div></section>
     <section className="mobile-learning-details" aria-label="学习数据详情">
       <div><small>当前题库题量</small><strong>{progress ? progress.questionCount : preview ? '1283' : '—'}</strong></div>
       <div><small>未作答题目</small><strong>{progress ? progress.unansweredCount : preview ? '857' : '—'}</strong></div>
@@ -99,9 +106,6 @@ function MobileHomePage({ progress, progressLoading, progressError }: { progress
       return <div key={type}><span>{labels[index]}</span><strong>{value == null ? '—' : `${value}%`}</strong></div>;
     })}</section>
     <section className="mobile-recent-practice"><h2>最近练习</h2>{progress?.recentSessions.length ? progress.recentSessions.slice(0, 3).map(session => <div key={session.id}><span>{new Date(session.updatedAt).toLocaleDateString('zh-CN')} · {session.submittedCount}/{session.questionCount} 题</span><strong>{session.attempts ? `${Math.round(session.correctCount / session.attempts * 1000) / 10}%` : '—'}</strong></div>) : <p>{preview ? '开发预览 · 无正式学习记录' : progressLoading ? '正在读取…' : progressError || '暂无练习记录'}</p>}</section>
-    <section className="mobile-quick-section"><div className="mobile-quick-grid">
-      {quick.map(({ title, icon: Icon, to, tone }) => <Link className="mobile-quick-link" key={title} to={href(to)}><span className={`quick-icon tone-${tone}`}><Icon size={20} /></span><span>{title}</span></Link>)}
-    </div></section>
     <Toast message={notice.message} />
   </Screen>;
 }
@@ -112,7 +116,7 @@ export function MobileDashboard({ progress, progressLoading, progressError }: { 
 
 export function StartPage() {
   return <Screen className="start-screen" immersive>
-    <div className="start-hero"><span className="start-logo"><IconBook size={50} /></span><h1>理论考试</h1><span className="start-subtitle">LEARNING STUDIO</span></div>
+    <div className="start-hero"><span className="start-logo"><IconBookFilled size={50} /></span><h1>理论考试</h1><span className="start-subtitle">LEARNING STUDIO</span></div>
     <div className="start-copy"><strong>四级理论题库</strong><span>帮助你更高效地备考</span></div>
     <div className="start-footer"><MobileButton to={href('/connect')}>开始使用 <IconChevronRight size={18} /></MobileButton></div>
   </Screen>;
@@ -122,28 +126,221 @@ function allowedServerAddress(value: string) {
   try {
     const url = new URL(value.trim());
     if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password) return false;
-    const localHost = /^(localhost|127(?:\.\d{1,3}){3}|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|\[::1\])$/i.test(url.hostname);
-    return url.protocol === 'https:' || localHost;
+    const loopbackHost = /^(localhost|127(?:\.\d{1,3}){3}|\[::1\])$/i.test(url.hostname);
+    return url.protocol === 'https:' || (import.meta.env.DEV && loopbackHost);
   } catch { return false; }
 }
 
+function addressFromServerQr(raw: string): string | null {
+  let candidate = raw.trim();
+  try {
+    const payload = JSON.parse(candidate) as { serverAddress?: unknown; serverUrl?: unknown };
+    candidate = typeof payload.serverAddress === 'string' ? payload.serverAddress : typeof payload.serverUrl === 'string' ? payload.serverUrl : candidate;
+  } catch { /* Plain URL QR codes are supported too. */ }
+  return allowedServerAddress(candidate) ? new URL(candidate).toString().replace(/\/+$/, '') : null;
+}
+
+type BarcodeScanSession = {
+  active: boolean;
+  handled: boolean;
+  listeners: PluginListenerHandle[];
+  appStateListener?: PluginListenerHandle;
+  starting?: Promise<void>;
+  stopping?: Promise<void>;
+};
+
 export function ConnectPage() {
+  const sameOriginWeb = usesSameOriginWebApi();
   const [address, setAddress] = useState(savedServerAddress());
   const [error, setError] = useState('');
   const [manualOpen, setManualOpen] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanMessage, setScanMessage] = useState('正在准备相机…');
+  const scanSessionRef = useRef<BarcodeScanSession | null>(null);
+  const cameraStartPendingRef = useRef(false);
   const notice = useNotice();
   const { refreshServer } = useAuth();
+
+  const stopScanSession = (session: BarcodeScanSession) => {
+    if (session.stopping) return session.stopping;
+    session.active = false;
+    session.stopping = (async () => {
+      const listeners = session.listeners.splice(0);
+      await Promise.all(listeners.map(listener => listener.remove().catch(() => undefined)));
+      const appStateListener = session.appStateListener;
+      session.appStateListener = undefined;
+      if (appStateListener) await appStateListener.remove().catch(() => undefined);
+      try { await BarcodeScanner.stopScan(); } catch { /* Safe when permission or camera binding failed. */ }
+      if (session.starting && cameraStartPendingRef.current) {
+        void session.starting.then(
+          async () => { try { await BarcodeScanner.stopScan(); } catch { /* Release a camera bound after cancellation. */ } },
+          () => undefined,
+        ).finally(() => { cameraStartPendingRef.current = false; });
+      }
+      document.body.classList.remove('barcode-scanner-active');
+      document.documentElement.classList.remove('barcode-scanner-active');
+      if (scanSessionRef.current === session) {
+        scanSessionRef.current = null;
+        setScanning(false);
+      }
+    })();
+    return session.stopping;
+  };
+
+  useEffect(() => {
+    const handleScannerBack = () => {
+      const session = scanSessionRef.current;
+      if (session) void stopScanSession(session).then(() => notice.notify('已取消扫码。'));
+    };
+    window.addEventListener('theory-exam:scanner-back', handleScannerBack);
+    return () => window.removeEventListener('theory-exam:scanner-back', handleScannerBack);
+  }, []);
+
+  useEffect(() => () => {
+    const session = scanSessionRef.current;
+    if (session) void stopScanSession(session);
+  }, []);
+
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== 'ios') return;
+    const restoreScan = (event: Event) => {
+      const detail = (event as CustomEvent<{ pluginId?: string; methodName?: string; success?: boolean; data?: { barcodes?: Array<{ rawValue?: string }> } }>).detail;
+      if (detail?.pluginId !== 'BarcodeScanner' || detail.methodName !== 'scan' || !detail.success) return;
+      const address = addressFromServerQr(detail.data?.barcodes?.[0]?.rawValue ?? '');
+      if (!address) { setError('恢复的二维码内容无效，请重新扫码或手动输入服务器地址。'); return; }
+      setAddress(address); setManualOpen(true); notice.notify('已恢复扫码地址，请验证连接。');
+    };
+    window.addEventListener('theory-exam:app-restored-result', restoreScan);
+    return () => window.removeEventListener('theory-exam:app-restored-result', restoreScan);
+  }, []);
+
+  const startAndroidScan = async () => {
+    if (scanSessionRef.current || cameraStartPendingRef.current) {
+      notice.notify('相机正在关闭，请稍后重试。');
+      return;
+    }
+    const session: BarcodeScanSession = { active: true, handled: false, listeners: [] };
+    scanSessionRef.current = session;
+    setScanning(true);
+    setScanMessage('正在准备相机…');
+    document.documentElement.classList.add('barcode-scanner-active');
+    document.body.classList.add('barcode-scanner-active');
+
+    const registerListener = async (handle: PluginListenerHandle) => {
+      if (!session.active) { await handle.remove(); return false; }
+      session.listeners.push(handle);
+      return true;
+    };
+
+    const finishWithRawValue = async (rawValue: string) => {
+      await stopScanSession(session);
+      if (session.handled && scanSessionRef.current !== session) {
+        const address = addressFromServerQr(rawValue);
+        if (!address) {
+          setManualOpen(true);
+          setError('二维码中的服务器地址无效。正式 APP 连接必须使用可信 HTTPS。');
+          return;
+        }
+        setAddress(address);
+        setManualOpen(true);
+        notice.notify('已读取地址，请验证连接。');
+      }
+    };
+
+    try {
+      const permission = await BarcodeScanner.checkPermissions();
+      if (!session.active) return;
+      const granted = permission.camera === 'granted' || (await BarcodeScanner.requestPermissions()).camera === 'granted';
+      if (!granted) {
+        await stopScanSession(session);
+        setManualOpen(true);
+        setError('相机权限未授予。请在系统设置允许相机后重试，或手动输入服务器地址。');
+        return;
+      }
+      if (!session.active) return;
+
+      const barcodeListener = await BarcodeScanner.addListener('barcodesScanned', event => {
+        if (!session.active || session.handled) return;
+        const barcode = event.barcodes.find(item => item.format === BarcodeFormat.QrCode && item.rawValue?.trim());
+        if (!barcode?.rawValue) return;
+        session.handled = true;
+        void finishWithRawValue(barcode.rawValue.trim());
+      });
+      if (!await registerListener(barcodeListener)) return;
+
+      const errorListener = await BarcodeScanner.addListener('scanError', event => {
+        if (!session.active || session.handled) return;
+        session.handled = true;
+        void stopScanSession(session).then(() => {
+          setManualOpen(true);
+          setError(`扫码失败：${event.message || '相机识别发生错误。'}`);
+        });
+      });
+      if (!await registerListener(errorListener)) return;
+
+      const appStateListener = await NativeApp.addListener('appStateChange', ({ isActive }) => {
+        if (!isActive && session.active) void stopScanSession(session);
+      });
+      if (!session.active) { await appStateListener.remove(); return; }
+      session.appStateListener = appStateListener;
+
+      cameraStartPendingRef.current = true;
+      session.starting = BarcodeScanner.startScan({ formats: [BarcodeFormat.QrCode], lensFacing: LensFacing.Back });
+      let startTimeout: number | undefined;
+      try {
+        await Promise.race([
+          session.starting,
+          new Promise<never>((_, reject) => {
+            startTimeout = window.setTimeout(() => reject(new Error('相机启动超时，请取消后重试。')), 15000);
+          }),
+        ]);
+        if (session.active) cameraStartPendingRef.current = false;
+        if (session.active) setScanMessage('请将服务器二维码放入扫描框。');
+      } finally {
+        if (startTimeout !== undefined) window.clearTimeout(startTimeout);
+      }
+    } catch (scanError) {
+      const wasActive = session.active;
+      await stopScanSession(session);
+      if (wasActive) {
+        setManualOpen(true);
+        setError(scanError instanceof Error ? `扫码失败：${scanError.message}` : '扫码失败，请手动输入服务器地址。');
+      }
+    }
+  };
+
+  const scanServerQr = async () => {
+    setError('');
+    if (!Capacitor.isNativePlatform()) { notice.notify('二维码扫描仅在 Android APP 中可用。'); return; }
+    if (Capacitor.getPlatform() === 'android') { await startAndroidScan(); return; }
+    try {
+      const permission = await BarcodeScanner.checkPermissions();
+      const granted = permission.camera === 'granted' || (await BarcodeScanner.requestPermissions()).camera === 'granted';
+      if (!granted) { setManualOpen(true); setError('相机权限未授予。请在系统设置允许相机后重试，或手动输入服务器地址。'); return; }
+      const result = await BarcodeScanner.scan({ formats: [BarcodeFormat.QrCode] });
+      const raw = result.barcodes[0]?.rawValue?.trim();
+      if (!raw) { notice.notify('没有读取到二维码内容。'); return; }
+      const address = addressFromServerQr(raw);
+      if (!address) { setError('二维码中的服务器地址无效。正式 APP 连接必须使用可信 HTTPS。'); return; }
+      setAddress(address);
+      setManualOpen(true);
+      notice.notify('已读取地址，请验证连接。');
+    } catch (scanError) {
+      setError(scanError instanceof Error ? `扫码失败：${scanError.message}` : '扫码失败，请手动输入服务器地址。');
+    }
+  };
   const connect = async () => {
     setError('');
     if (!allowedServerAddress(address)) {
-      setError('请输入有效地址。公网地址须使用 HTTPS；HTTP 仅适用于本机或局域网地址。');
+      setError('请输入有效服务器地址。正式 APP 与公网连接必须使用可信 HTTPS；HTTP 仅限浏览器开发环境中的本机回环地址。');
       return;
     }
     if (previewMode()) { notice.notify('开发预览与正式服务端隔离，未发起连接请求。'); return; }
     setConnecting(true);
     try {
       const normalized = new URL(address.trim()).toString().replace(/\/+$/, '');
+      if (usesSameOriginWebApi() && normalized !== window.location.origin) throw new ApiError('网页端使用当前站点的同源学习服务，不能切换到其他服务器地址。', 'SAME_ORIGIN_REQUIRED');
       const health = await apiRequest<{ status: string; database: { status: string } }>('/api/health', { base: normalized, auth: false, timeoutMs: 5000 });
       if (health.status !== 'ok' || health.database?.status !== 'ok') throw new ApiError('服务器健康检查未通过。', 'HEALTH_CHECK_FAILED');
       saveServerAddress(normalized);
@@ -155,11 +352,26 @@ export function ConnectPage() {
   };
   return <Screen className="connect-screen" immersive>
     <Header back="/start" />
-    <div className="auth-title"><h1>连接服务器</h1><p>请选择连接方式，连接你的学习服务器</p></div>
-    <button className="connect-option" onClick={() => notice.notify('扫码功能将在 Android 相机权限接入后提供。')}><span className="connect-option-icon tone-blue"><IconQrcode size={28} /></span><span><strong>扫码连接</strong><small>扫描电脑端二维码<br />快速连接服务器</small></span><IconChevronRight className="option-arrow" size={18} /></button>
-    <button className="connect-option" aria-expanded={manualOpen} onClick={() => setManualOpen(value => !value)}><span className="connect-option-icon tone-blue"><IconLink size={26} /></span><span><strong>手动连接</strong><small>输入服务器地址<br />进行连接</small></span><IconChevronRight className="option-arrow" size={18} /></button>
-    {manualOpen && <section className="connect-manual"><label htmlFor="server-address">服务器地址</label><input id="server-address" value={address} onChange={e => setAddress(e.target.value)} placeholder="https://example.com" inputMode="url" autoCapitalize="none" />{error && <p className="form-error" role="alert">{error}</p>}<MobileButton onClick={connect} disabled={connecting}>{connecting ? '正在检查…' : '验证并连接'}</MobileButton></section>}
-    <Link className="auth-footnote" to={href('/login')}>连接后即可登录你的账号</Link>
+    <div className="auth-title"><h1>{sameOriginWeb ? '检查网页服务' : '连接服务器'}</h1><p>{sameOriginWeb ? '网页会通过当前安全站点访问学习服务' : '请选择连接方式，连接你的学习服务器'}</p></div>
+    {sameOriginWeb ? <section className="connect-web-origin" aria-label="当前网页服务">
+      <div><span className="connect-option-icon tone-blue"><IconShieldCheck size={25} /></span><span><strong>当前网页服务</strong><small>{window.location.origin}</small></span></div>
+      <p>浏览器使用当前 HTTPS 站点的同源连接，无需扫码或填写其他服务器地址。</p>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <MobileButton onClick={connect} disabled={connecting}>{connecting ? '正在检查…' : '验证当前服务'}</MobileButton>
+    </section> : <>
+      <button className="connect-option" onClick={() => void scanServerQr()} disabled={scanning}><span className="connect-option-icon tone-blue"><IconQrcode size={28} /></span><span><strong>扫码连接</strong><small>扫描电脑端二维码<br />快速连接服务器</small></span><IconChevronRight className="option-arrow" size={18} /></button>
+      <button className="connect-option" aria-expanded={manualOpen} onClick={() => setManualOpen(value => !value)}><span className="connect-option-icon tone-blue"><IconLink size={26} /></span><span><strong>手动连接</strong><small>输入服务器地址<br />进行连接</small></span><IconChevronRight className="option-arrow" size={18} /></button>
+      {manualOpen && <section className="connect-manual"><label htmlFor="server-address">服务器地址</label><input id="server-address" value={address} onChange={e => setAddress(e.target.value)} placeholder="https://example.com" inputMode="url" autoCapitalize="none" />{error && <p className="form-error" role="alert">{error}</p>}<MobileButton onClick={connect} disabled={connecting}>{connecting ? '正在检查…' : '验证并连接'}</MobileButton></section>}
+    </>}
+    <Link className="auth-footnote" to={href('/login')}>{sameOriginWeb ? '继续登录网页学习账号' : '连接后即可登录你的账号'}</Link>
+    {scanning && <section className="barcode-scanner-modal" role="dialog" aria-modal="true" aria-label="扫描服务器二维码">
+      <div className="barcode-scanner-top"><strong>扫描服务器二维码</strong><span>{scanMessage}</span></div>
+      <div className="barcode-scanner-frame" aria-hidden="true" />
+      <button type="button" className="barcode-scanner-cancel" onClick={() => {
+        const session = scanSessionRef.current;
+        if (session) void stopScanSession(session).then(() => notice.notify('已取消扫码。'));
+      }}><IconX size={18} />取消扫描</button>
+    </section>}
     <Toast message={notice.message} />
   </Screen>;
 }
@@ -182,7 +394,7 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       const session = await apiRequest<ApiSession>('/api/auth/login', { base: serverAddress, method: 'POST', auth: false, body: { username, password, remember } });
-      saveSession(session, remember);
+      await saveSession(session, remember);
       setUser(session.user);
       setPassword('');
       navigate('/', { replace: true });
@@ -209,9 +421,9 @@ const practiceChoices: Array<{ title: string; desc: string; icon: typeof IconBoo
   { title: '单选题练习', desc: '只练习单选题', icon: IconFileText, tone: 'blue', mode: 'single' },
   { title: '多选题练习', desc: '只练习多选题', icon: IconFileText, tone: 'purple', mode: 'multiple' },
   { title: '判断题练习', desc: '只练习判断题', icon: IconCircleCheck, tone: 'green', mode: 'judgement' },
-  { title: '未做题目', desc: '筛选当前题库中从未提交的题目', icon: IconBook, tone: 'blue', mode: 'unanswered' },
   { title: '错题专项练习', desc: '练习待复习状态的错题', icon: IconRefresh, tone: 'red', mode: 'mistakes' },
   { title: '收藏题目', desc: '练习当前题库版本中已收藏的题目', icon: IconStar, tone: 'amber', mode: 'favorites' },
+  { title: '未做题目', desc: '筛选当前题库中从未提交的题目', icon: IconBook, tone: 'blue', mode: 'unanswered' },
 ];
 
 export function PracticeSelectionPage() {
@@ -224,6 +436,7 @@ export function PracticeSelectionPage() {
   const [starting, setStarting] = useState<PracticeMode | null>(null);
   const [startError, setStartError] = useState('');
   const [quantity, setQuantity] = useState('20');
+  const [moreOpen, setMoreOpen] = useState(false);
   useEffect(() => {
     if (preview || !user || !bank) { setActiveSession(null); return; }
     let mounted = true;
@@ -259,10 +472,9 @@ export function PracticeSelectionPage() {
     finally { setStarting(null); }
   };
   return <ResponsivePage desktop={<DesktopPracticeSelection bankName={bank?.name} activeSession={activeSession} sessionLoading={sessionLoading} starting={starting} error={startError || error} quantity={quantity} setQuantity={setQuantity} onStart={start} onResume={resume} />}>
-    <Screen className="list-screen" immersive><Header title="日常练习" back="/" right={<button className="header-icon" aria-label="更多" onClick={() => notice.notify('练习筛选可组合使用。')}><IconDots size={21} /></button>} /><PreviewBadge /><div className="practice-list">
+    <Screen className="list-screen" immersive><Header title="日常练习" back="/" right={<button className="header-icon" aria-label="更多练习选项" aria-expanded={moreOpen} aria-controls="practice-more-menu" onClick={() => setMoreOpen(value => !value)}><IconDots size={21} /></button>} /><PreviewBadge />{moreOpen && <><button className="practice-more-backdrop" aria-label="关闭更多练习选项" onClick={() => setMoreOpen(false)} /><div className="practice-more-menu" id="practice-more-menu" role="group" aria-label="更多练习选项"><label htmlFor="practice-quantity">本轮题量<select id="practice-quantity" aria-label="选择本轮题量" value={quantity} onChange={event => setQuantity(event.target.value)}><option value="20">20 题</option><option value="50">50 题</option><option value="100">100 题</option><option value="all">全部可用题目</option></select></label><button className="practice-more-unanswered" type="button" onClick={() => { setMoreOpen(false); void start('unanswered'); }}><span><strong>未做题目</strong><small>筛选从未提交的题目</small></span><IconChevronRight size={18} /></button></div></>}<div className="practice-list">
       {activeSession && <button className="practice-resume-card" type="button" onClick={() => void resume()} disabled={Boolean(starting)}><span><strong>继续上次练习</strong><small>第 {activeSession.currentPosition} / {activeSession.questionCount} 题 · {activeSession.status === 'exited' ? '已暂时退出' : '进行中'}</small></span><IconChevronRight size={19} /></button>}
-      <label className="practice-quantity">本轮题量<select aria-label="选择本轮题量" value={quantity} onChange={event => setQuantity(event.target.value)}><option value="20">20 题</option><option value="50">50 题</option><option value="100">100 题</option><option value="all">全部可用题目</option></select></label>
-      {practiceChoices.map(({ title, desc, icon: Icon, tone, mode }) => <button className="practice-choice" type="button" key={mode} disabled={Boolean(starting)} onClick={() => void start(mode)}><span className={`choice-icon tone-${tone}`}><Icon size={21} /></span><span className="choice-copy"><strong>{title}</strong><small>{desc}</small></span><IconChevronRight className="choice-chevron" size={18} /></button>)}
+      {practiceChoices.filter(({ mode }) => mode !== 'unanswered').map(({ title, desc, icon: Icon, tone, mode }) => <button className="practice-choice" type="button" key={mode} disabled={Boolean(starting)} onClick={() => void start(mode)}><span className={`choice-icon tone-${tone}`}><Icon size={21} /></span><span className="choice-copy"><strong>{title}</strong><small>{desc}</small></span><IconChevronRight className="choice-chevron" size={18} /></button>)}
     </div>{startError && <p className="form-error" role="alert">{startError}</p>}<div className="mobile-info-note"><IconInfoCircle size={16} />{preview ? '开发预览使用隔离测试数据，不会访问正式题库。' : error || (loading || sessionLoading ? '正在读取服务端题库和未完成练习…' : bank ? `当前题库：${bank.name}。答题和统计由本机服务端保存。` : '请先连接服务器并登录，再选择题库开始练习。')}</div><Toast message={notice.message} /></Screen>
   </ResponsivePage>;
 }
@@ -578,7 +790,6 @@ export function PersonalCenterPage() {
     { title: '错题本', detail: preview ? '预览数据' : mistakeStats ? `待复习 ${mistakeStats.review + mistakeStats.reinforcing} 题 · 已掌握 ${mistakeStats.mastered} 题` : '连接服务端后显示', icon: IconFileText },
     { title: '考试记录', detail: preview ? '共 12 次' : '连接服务端后显示', icon: IconClipboardIcon },
     { title: '题库切换', detail: selectedBank ? '已选择' : '读取服务端题库', icon: IconRefresh },
-    { title: '连接设置', detail: serverAddress ? serverAddress : '未连接本地服务', icon: IconLink },
     { title: '修改密码', detail: '', icon: IconLock },
     { title: '关于应用', detail: 'V1.0.0', icon: IconInfoCircle },
   ];
@@ -609,7 +820,7 @@ export function PersonalCenterPage() {
     setChangingPassword(true);
     try {
       const result = await apiRequest<ApiSession>('/api/auth/password', { method: 'POST', body: { currentPassword, newPassword } });
-      saveSession(result, persistentSession());
+      await saveSession(result, persistentSession());
       setUser(result.user);
       setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
       setPanel('');
@@ -623,16 +834,50 @@ export function PersonalCenterPage() {
   };
   return <ResponsivePage desktop={<DesktopPlaceholder title="我的" />}><Screen className="profile-screen"><header className="profile-header"><h1>我的</h1><button className="header-icon" aria-label="通知" onClick={() => notice.notify('当前没有新通知')}><IconBell size={20} /></button></header><PreviewBadge />
     <section className="profile-card"><span className="profile-avatar"><IconUserFilled size={24} /></span><div><strong>{preview ? '学习用户' : user?.username ?? '未登录'}</strong><small>{preview ? '预览账号 · 不代表真实用户' : user ? (user.role === 'admin' ? '本机管理员账号' : '已连接服务端账号') : '连接服务器后登录账号'}</small></div></section>
-    <section className="profile-links">{rows.map(({ title, detail, icon: Icon }) => <button key={title} className="profile-row" onClick={() => title === '连接设置' ? navigate('/connect') : void openPanel(title)}><Icon size={19} /><strong>{title}</strong>{detail && <span>{detail}</span>}<IconChevronRight className="profile-chevron" size={17} /></button>)}</section>
+    <section className="profile-links">{rows.map(({ title, detail, icon: Icon }) => <button key={title} className="profile-row" onClick={() => title === '我的收藏' ? navigate(href('/favorites')) : void openPanel(title)}><Icon size={19} /><strong>{title}</strong>{detail && <span>{detail}</span>}<IconChevronRight className="profile-chevron" size={17} /></button>)}</section>
     <button className="logout-button" onClick={() => void logout()}><IconLogout size={19} />退出登录</button>
     <Toast message={notice.message} />
     {panel && <div className="sheet-backdrop" role="presentation" onClick={() => setPanel('')}><section className="profile-sheet" role="dialog" aria-modal="true" aria-label={panel} onClick={e => e.stopPropagation()}><div className="sheet-heading"><strong>{panel}</strong><button aria-label="关闭" onClick={() => setPanel('')}><IconX size={21} /></button></div>
       {panel === '修改密码' && user && !preview ? <form className="password-change-form" onSubmit={changePassword}><label>当前密码<input type="password" autoComplete="current-password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} required /></label><label>新密码（至少 12 位）<input type="password" autoComplete="new-password" minLength={12} value={newPassword} onChange={event => setNewPassword(event.target.value)} required /></label><label>确认新密码<input type="password" autoComplete="new-password" minLength={12} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} required /></label>{panelError && <p className="form-error" role="alert">{panelError}</p>}<button className="sheet-done" disabled={changingPassword}>{changingPassword ? '正在保存…' : '修改密码'}</button></form>
-        : panel === '题库切换' && user && !preview ? <div className="profile-bank-list">{panelError && <p className="form-error" role="alert">{panelError}</p>}{banks.length ? banks.map(bank => <button key={bank.id} className={selectedBank === bank.id ? 'is-selected' : ''} onClick={() => chooseBank(bank.id)}><strong>{bank.name}</strong><span>{bank.activeVersion?.questionCount ?? 0} 道题</span>{selectedBank === bank.id && <IconCheck size={18} />}</button>) : <div className="empty-state compact"><IconBook size={24} /><strong>服务端暂无已启用题库</strong><span>请联系本机管理员导入题库。</span></div>}</div>
+        : panel === '题库切换' ? <div className="profile-bank-panel">{user && !preview ? <div className="profile-bank-list">{panelError && <p className="form-error" role="alert">{panelError}</p>}{banks.length ? banks.map(bank => <button key={bank.id} className={selectedBank === bank.id ? 'is-selected' : ''} onClick={() => chooseBank(bank.id)}><strong>{bank.name}</strong><span>{bank.activeVersion?.questionCount ?? 0} 道题</span>{selectedBank === bank.id && <IconCheck size={18} />}</button>) : <div className="empty-state compact"><IconBook size={24} /><strong>服务端暂无已启用题库</strong><span>请联系本机管理员导入题库。</span></div>}</div> : <div className="empty-state compact"><IconWifi size={24} /><strong>开发预览中的示例信息</strong><span>该示例数据不会访问或修改正式服务端。</span></div>}<button className="profile-connection-settings" onClick={() => { setPanel(''); navigate('/connect'); }}><IconLink size={18} /><span>连接设置</span><small>{serverAddress || '设置服务器地址'}</small><IconChevronRight size={17} /></button></div>
+          : panel === '关于应用' ? <AppUpdatePanel disabled={preview} />
           : <div className="empty-state compact"><IconWifi size={24} /><strong>{preview ? '开发预览中的示例信息' : user ? (panel === '题库切换' ? '题库列表暂不可用' : `服务端状态：${serverStatus === 'connected' ? '已连接' : '连接异常'}`) : '需要连接并登录本地服务端'}</strong><span>{preview ? '该示例数据不会访问或修改正式服务端。' : serverAddress || '当前没有真实账号数据或服务器连接。'}</span></div>}
       {panel !== '修改密码' && <button className="sheet-done" onClick={() => setPanel('')}>知道了</button>}
     </section></div>}
   </Screen></ResponsivePage>;
+}
+
+function AppUpdatePanel({ disabled }: { disabled: boolean }) {
+  const [result, setResult] = useState<CheckedUpdate | null>(null);
+  const [message, setMessage] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [progress, setProgress] = useState<{ received: number; total: number | null } | null>(null);
+  const check = async () => {
+    setChecking(true); setMessage('');
+    try {
+      const value = await checkForUpdate();
+      setResult(value);
+      setMessage(value.available ? '' : '当前已是服务器提供的最新版本。');
+    } catch (error) { setMessage(error instanceof Error ? error.message : '版本检查失败，请重试。'); }
+    finally { setChecking(false); }
+  };
+  const download = async () => {
+    if (!result?.available) return;
+    setDownloading(true); setMessage(''); setProgress({ received: 0, total: null });
+    try {
+      await downloadAndOpenUpdate(result.manifest, (received, total) => setProgress({ received, total }));
+      setMessage('下载与 SHA-256 校验完成，已打开 Android 系统安装确认。');
+    } catch (error) { setMessage(error instanceof Error ? error.message : '下载或校验失败，请重试。'); }
+    finally { setDownloading(false); }
+  };
+  const progressText = progress ? `${progress.total ? Math.floor(progress.received * 100 / progress.total) : Math.round(progress.received / 1024)}${progress.total ? '%' : ' KB'}` : '';
+  return <div className="app-update-panel">
+    <p>只会从已认证本机服务获取更新。安装需要你在 Android 系统安装器中确认。</p>
+    <button className="sheet-done" disabled={disabled || checking || downloading} onClick={() => void check()}>{checking ? '正在检查…' : '检查更新'}</button>
+    {result && <section><strong>当前版本 {result.currentVersion}</strong>{result.available ? <><h3>发现版本 {result.manifest.version}</h3><p>{result.manifest.releaseNotes || '此版本没有更新说明。'}</p><p>应用标识与版本已检查；Android 系统安装器会验证签名连续性。</p><button className="sheet-done" disabled={downloading} onClick={() => void download()}>{downloading ? `正在下载 ${progressText}` : '下载并打开安装器'}</button></> : null}</section>}
+    {message && <p className="form-error" role="status">{message}</p>}
+  </div>;
 }
 
 function IconClipboardIcon(props: React.ComponentProps<typeof IconFileText>) {

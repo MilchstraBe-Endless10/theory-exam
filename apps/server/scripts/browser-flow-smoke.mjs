@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -12,10 +12,14 @@ const serverDir = fileURLToPath(new URL('..', import.meta.url));
 const projectDir = resolve(serverDir, '../..');
 const mobileDir = join(projectDir, 'apps', 'mobile');
 const workbookPath = join(projectDir, 'local-input', '四级理论试题.xlsx');
-const screenshotDir = process.env.P4_BROWSER_SCREENSHOT_DIR || process.env.P3_BROWSER_SCREENSHOT_DIR || process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR ? resolve(process.env.P4_BROWSER_SCREENSHOT_DIR || process.env.P3_BROWSER_SCREENSHOT_DIR || process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR) : '';
+const useProductionGateway = process.env.P5_BROWSER_USE_PRODUCTION_GATEWAY === '1';
+const screenshotDirectory = process.env.P5_BROWSER_SCREENSHOT_DIR || process.env.P4_BROWSER_SCREENSHOT_DIR || process.env.P3_BROWSER_SCREENSHOT_DIR || process.env.P2_BROWSER_SCREENSHOT_DIR || process.env.P1_BROWSER_SCREENSHOT_DIR;
+const screenshotDir = screenshotDirectory ? resolve(screenshotDirectory) : '';
 const adminPassword = `P1BrowserAdmin-${randomBytes(16).toString('hex')}!`;
 const userPassword = `P1BrowserUser-${randomBytes(16).toString('hex')}!`;
 const changedUserPassword = `P1BrowserChanged-${randomBytes(16).toString('hex')}!`;
+const secondUserPassword = `P1BrowserUserB-${randomBytes(16).toString('hex')}!`;
+const secondChangedUserPassword = `P1BrowserChangedB-${randomBytes(16).toString('hex')}!`;
 const temporaryDirectory = mkdtempSync(join(tmpdir(), 'theory-exam-p1-browser-'));
 const profileDirectory = mkdtempSync(join(tmpdir(), 'theory-exam-p1-chromium-'));
 const processes = [];
@@ -159,24 +163,72 @@ async function stop(child) {
 try {
   assert.ok(readFileSync(workbookPath).length > 0, 'The local test workbook is missing.');
   const serverPort = await getFreePort();
-  const vitePort = await getFreePort();
+  const adminPort = await getFreePort();
+  const appPort = await getFreePort();
   const serverOrigin = `http://127.0.0.1:${serverPort}`;
-  const viteOrigin = `http://127.0.0.1:${vitePort}`;
+  const adminOrigin = `http://127.0.0.1:${adminPort}`;
+  const gatewayTlsCert = useProductionGateway ? process.env.P5_BROWSER_WEB_TLS_CERT_FILE : '';
+  const gatewayTlsKey = useProductionGateway ? process.env.P5_BROWSER_WEB_TLS_KEY_FILE : '';
+  if (useProductionGateway) {
+    assert.ok(gatewayTlsCert && gatewayTlsKey, 'Production Gateway browser tests require both TLS certificate and private-key paths.');
+    assert.ok(process.env.P5_BROWSER_TRUST_CA_FILE, 'P5_BROWSER_TRUST_CA_FILE is required for strict HTTPS production Gateway browser tests.');
+  }
+  const gatewayTlsHost = process.env.P5_BROWSER_GATEWAY_HOST || '127.0.0.1';
+  const gatewayProtocol = gatewayTlsCert && gatewayTlsKey ? 'https' : 'http';
+  const viteOrigin = `${gatewayProtocol}://${gatewayTlsHost}:${appPort}`;
+  const browserApiOrigin = useProductionGateway ? viteOrigin : serverOrigin;
   const databasePath = join(temporaryDirectory, 'browser.test.sqlite');
   const serverEnv = {
     ...process.env,
-    NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(serverPort),
-    THEORY_DATABASE_PATH: databasePath, CORS_ORIGINS: viteOrigin,
+    NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(serverPort), ADMIN_PORT: String(adminPort),
+    THEORY_DATABASE_PATH: databasePath, CORS_ORIGINS: `${viteOrigin},${adminOrigin}`,
   };
+  execFileSync(process.execPath, ['--import', 'tsx', 'src/cli.ts', 'migrate'], {
+    cwd: serverDir, env: serverEnv, stdio: 'pipe',
+  });
   const serverRun = start(process.execPath, ['--import', 'tsx', 'src/server.ts'], serverDir, serverEnv);
   await waitFor(async () => (await fetch(`${serverOrigin}/api/health`).catch(() => null))?.ok, 'Fastify test server did not start.');
 
-  const viteEnv = { ...process.env, VITE_API_PROXY_TARGET: serverOrigin };
-  const viteRun = start(process.execPath, [join(mobileDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(vitePort), '--strictPort'], mobileDir, viteEnv);
-  await waitFor(async () => (await fetch(`${viteOrigin}/admin`).catch(() => null))?.ok, 'Vite test server did not start.');
+  if (useProductionGateway) {
+    const gatewayEnv = {
+      ...serverEnv,
+      WEB_HOST: '127.0.0.1', WEB_PORT: String(appPort), WEB_API_TARGET: serverOrigin,
+      WEB_STATIC_DIR: join(mobileDir, 'dist'),
+      ...(gatewayTlsCert && gatewayTlsKey ? { WEB_TLS_CERT_FILE: gatewayTlsCert, WEB_TLS_KEY_FILE: gatewayTlsKey } : {}),
+    };
+    const gatewayRun = start(process.execPath, [join(serverDir, 'dist/web-server.js')], serverDir, gatewayEnv);
+    try {
+      await waitFor(() => new Promise(resolvePort => {
+        const probe = net.createConnection(appPort, '127.0.0.1');
+        probe.once('connect', () => { probe.destroy(); resolvePort(true); });
+        probe.once('error', () => resolvePort(false));
+      }), 'Production Web Gateway test server did not start.');
+    } catch (error) {
+      console.error('Production Gateway startup output:', gatewayRun.output.join('').slice(-3000));
+      throw error;
+    }
+    console.log('Using built production Web Gateway and static assets with isolated SQLite.');
+  } else {
+    const viteEnv = { ...process.env, VITE_API_PROXY_TARGET: serverOrigin };
+    start(process.execPath, [join(mobileDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(appPort), '--strictPort'], mobileDir, viteEnv);
+    await waitFor(async () => (await fetch(`${viteOrigin}/`).catch(() => null))?.ok, 'Vite test server did not start.');
+  }
 
   const chromium = process.env.CHROMIUM_BIN || 'chromium';
-  browser = start(chromium, ['--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--remote-debugging-port=0', `--user-data-dir=${profileDirectory}`, '--window-size=1536,1024', 'about:blank'], process.cwd(), process.env).child;
+  const browserEnv = { ...process.env };
+  const browserArgs = ['--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--remote-debugging-port=0', `--user-data-dir=${profileDirectory}`, '--window-size=1536,1024'];
+  if (gatewayProtocol === 'https') {
+    const trustCa = process.env.P5_BROWSER_TRUST_CA_FILE;
+    assert.ok(trustCa, 'P5_BROWSER_TRUST_CA_FILE is required for strict HTTPS production Gateway browser tests.');
+    const browserHome = join(profileDirectory, 'home');
+    const nssDatabase = join(browserHome, '.pki', 'nssdb');
+    mkdirSync(nssDatabase, { recursive: true });
+    execFileSync(process.env.CERTUTIL_BIN || 'certutil', ['-N', '--empty-password', '-d', `sql:${nssDatabase}`], { stdio: 'pipe' });
+    execFileSync(process.env.CERTUTIL_BIN || 'certutil', ['-A', '-n', 'P5 isolated Web CA', '-t', 'C,,', '-d', `sql:${nssDatabase}`, '-i', trustCa], { stdio: 'pipe' });
+    browserEnv.HOME = browserHome;
+    if (gatewayTlsHost !== '127.0.0.1' && gatewayTlsHost !== 'localhost') browserArgs.push(`--host-resolver-rules=MAP ${gatewayTlsHost} 127.0.0.1`);
+  }
+  browser = start(chromium, [...browserArgs, 'about:blank'], process.cwd(), browserEnv).child;
   const portFile = join(profileDirectory, 'DevToolsActivePort');
   let debugPort = '';
   await waitFor(async () => {
@@ -189,10 +241,16 @@ try {
   socket.addEventListener('message', event => {
     const message = JSON.parse(event.data);
     if (message.method === 'Runtime.exceptionThrown') consoleErrors.push(message.params.exceptionDetails.text);
-    if (message.method === 'Log.entryAdded' && message.params.entry.level === 'error') consoleErrors.push(message.params.entry.text);
+    if (message.method === 'Log.entryAdded' && message.params.entry.level === 'error'
+      && message.params.entry.source !== 'network'
+      && !message.params.entry.text.includes('status of 401 (Unauthorized)')) consoleErrors.push(message.params.entry.text);
     if (message.method === 'Network.responseReceived' && message.params.response.status >= 400) {
-      responseFailures.push(`${message.params.response.status} ${message.params.response.url}`);
-      if (message.params.response.status >= 500) consoleErrors.push(`${message.params.response.status} ${message.params.response.url}`);
+      const response = message.params.response;
+      const responsePath = new URL(response.url).pathname;
+      const expectedUnauthenticatedProbe = response.status === 401 && responsePath === '/api/auth/me';
+      const expectedCrossAccountProbe = response.status === 404 && /^\/api\/practice\/sessions\/[0-9a-f-]{36}$/i.test(responsePath);
+      if (!expectedUnauthenticatedProbe && !expectedCrossAccountProbe) responseFailures.push(`${response.status} ${response.url}`);
+      if (response.status >= 500) consoleErrors.push(`${response.status} ${response.url}`);
     }
     if (!message.id) return;
     const request = pending.get(message.id);
@@ -221,7 +279,7 @@ try {
   await capture('1536x1024-desktop-home-empty.png');
   console.log('PASS desktop dashboard shows a truthful empty state before a bank is imported');
 
-  await navigate(`${viteOrigin}/admin`);
+  await navigate(`${adminOrigin}/admin`);
   await waitFor(async () => (await bodyText()).includes('初始化本机管理员'), 'Admin bootstrap form did not appear.');
   await fill('.admin-auth-card input[autocomplete="username"]', 'p1-browser-admin');
   await fill('.admin-auth-card input[type="password"]', adminPassword);
@@ -232,6 +290,10 @@ try {
   await fill('.admin-create-user input[type="password"]', userPassword);
   await click('.admin-create-user button.admin-primary');
   await waitFor(async () => (await bodyText()).includes('p1-browser-learner'), 'Admin UI did not create the ordinary user.');
+  await fill('.admin-create-user input:first-of-type', 'p1-browser-learner-b');
+  await fill('.admin-create-user input[type="password"]', secondUserPassword);
+  await click('.admin-create-user button.admin-primary');
+  await waitFor(async () => (await bodyText()).includes('p1-browser-learner-b'), 'Admin UI did not create the second isolated ordinary user.');
 
   const document = await cdp('DOM.getDocument', { depth: -1 });
   const input = await cdp('DOM.querySelector', { nodeId: document.root.nodeId, selector: '.admin-file-label input[type="file"]' });
@@ -260,10 +322,25 @@ try {
 
   await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await navigate(`${viteOrigin}/connect`);
-  await click('.connect-screen .connect-option:nth-of-type(2)');
-  await fill('#server-address', serverOrigin);
-  await click('.connect-manual button');
-  await waitFor(async () => (await bodyText()).includes('服务器连接成功，可以登录。'), 'Mobile UI could not verify the actual server health endpoint.');
+  if (useProductionGateway) {
+    await click('.connect-web-origin button');
+  } else {
+    await click('.connect-screen .connect-option:nth-of-type(2)');
+    await fill('#server-address', serverOrigin);
+    await click('.connect-manual button');
+  }
+  try {
+    await waitFor(async () => (await bodyText()).includes('服务器连接成功，可以登录。'), 'Mobile UI could not verify the actual server health endpoint.');
+  } catch (error) {
+    console.error('Connect page diagnostic:', JSON.stringify(await evaluate(`(async () => ({ path: location.pathname,
+      text: document.body.innerText.slice(0, 900), origin: location.origin,
+      savedAddress: localStorage.getItem('theory-exam.server-address'),
+      sameOriginHeading: document.querySelector('.connect-screen h1')?.innerText,
+      buttonText: [...document.querySelectorAll('.connect-screen button')].map(button => button.innerText.trim()),
+      health: await fetch('/api/health').then(async response => ({ status: response.status, body: await response.text() })).catch(reason => ({ error: reason.name })) }))()`)));
+    console.error('Connect response failures:', responseFailures.slice(-8));
+    throw error;
+  }
   await click('.connect-screen a.auth-footnote');
   await waitFor(async () => (await evaluate('location.pathname')) === '/login', 'Connect UI did not navigate to login.');
   await fill('.login-content input[autocomplete="username"]', 'p1-browser-learner');
@@ -274,8 +351,8 @@ try {
     await waitFor(async () => evaluate('Boolean(document.querySelector(".password-gate-card") || document.querySelector(".login-content .form-error") || location.pathname === "/")'), 'Login did not resolve.', 8000);
     loginResolved = true;
   } catch { /* include safe UI/session state below */ }
-  const firstLoginState = await evaluate('({ gate: Boolean(document.querySelector(".password-gate-card")), error: document.querySelector(".login-content .form-error")?.innerText ?? "", route: location.pathname, tokenStored: Boolean(localStorage.getItem("theory-exam.session-token") || sessionStorage.getItem("theory-exam.session-token.temporary")), loginButtonDisabled: document.querySelector(".login-content button[type=submit]")?.disabled ?? null, body: document.body.innerText.slice(0, 260) })');
-  assert.ok(loginResolved && firstLoginState.gate, `First-login password change gate did not appear: ${JSON.stringify(firstLoginState)}`);
+  const firstLoginState = await evaluate('({ gate: Boolean(document.querySelector(".password-gate-card")), error: document.querySelector(".login-content .form-error")?.innerText ?? "", route: location.pathname, tokenStored: Boolean(localStorage.getItem("theory-exam.session-token") || sessionStorage.getItem("theory-exam.session-token.temporary")), cookieVisibleToJavaScript: document.cookie.includes("theory_session"), loginButtonDisabled: document.querySelector(".login-content button[type=submit]")?.disabled ?? null, body: document.body.innerText.slice(0, 260) })');
+  assert.ok(loginResolved && firstLoginState.gate && !firstLoginState.tokenStored && !firstLoginState.cookieVisibleToJavaScript, `First-login gate or HttpOnly cookie session failed: ${JSON.stringify(firstLoginState)}`);
   await fill('.password-gate-card input[autocomplete="current-password"]', userPassword);
   await fill('.password-gate-card input[autocomplete="new-password"]', changedUserPassword);
   await fill('.password-gate-card label:nth-of-type(3) input', changedUserPassword);
@@ -287,8 +364,7 @@ try {
     const safeState = await evaluate(`(async () => {
       let banks = { status: 0, items: [] };
       try {
-        const token = localStorage.getItem('theory-exam.session-token') || sessionStorage.getItem('theory-exam.session-token.temporary') || '';
-        const response = await fetch(${JSON.stringify(`${serverOrigin}/api/banks`)}, { headers: { Authorization: 'Bearer ' + token } });
+        const response = await fetch(${JSON.stringify(`${browserApiOrigin}/api/banks`)}, { credentials: 'include' });
         const payload = await response.json();
         banks = { status: response.status, items: Array.isArray(payload.items) ? payload.items.map(bank => ({ name: bank.name, questionCount: bank.activeVersion?.questionCount ?? null })) : [], errorCode: payload.error?.code || '' };
       } catch (reason) { banks.errorCode = reason instanceof Error ? reason.name : 'fetch-error'; }
@@ -305,8 +381,27 @@ try {
   console.log('PASS browser server health check and ordinary user login');
 
   testDatabase = new DatabaseSync(databasePath);
+  const browserSession = testDatabase.prepare(`SELECT s.token_hash AS tokenHash, s.remember
+    FROM sessions s JOIN users u ON u.id = s.user_id WHERE u.username = ?`).get('p1-browser-learner');
+  assert.ok(browserSession, 'Ordinary browser session was not persisted.');
+  await evaluate(`(() => {
+    window.__p5RenewAck = false;
+    window.addEventListener('theory-exam:session-change', event => {
+      if (event.detail?.user?.username === 'p1-browser-learner') window.__p5RenewAck = true;
+    }, { once: true });
+    return true;
+  })()`);
+  const nearExpiry = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  testDatabase.prepare('UPDATE sessions SET expires_at = ? WHERE token_hash = ?').run(nearExpiry, browserSession.tokenHash);
+  await evaluate('document.dispatchEvent(new Event("visibilitychange"))');
+  await waitFor(async () => Date.parse(testDatabase.prepare(`SELECT expires_at AS expiresAt FROM sessions s
+    JOIN users u ON u.id = s.user_id WHERE u.username = ?`).get('p1-browser-learner').expiresAt) > Date.parse(nearExpiry)
+    && await evaluate('window.__p5RenewAck === true')
+    && (await bodyText()).includes('p1-browser-learner'), 'Browser visibility recovery did not renew and retain the authenticated session.');
+  console.log('PASS browser visibility recovery renews the existing server session');
+
   await navigate(`${viteOrigin}/practice`);
-  await waitFor(async () => (await evaluate('document.querySelectorAll("button.practice-choice").length')) === 8, 'Daily practice modes did not load.');
+  await waitFor(async () => (await evaluate('document.querySelectorAll("button.practice-choice").length')) === 7, 'Daily practice modes did not load.');
   await capture('390x844-practice-selection.png');
   await cdp('Emulation.setDeviceMetricsOverride', { width: 1536, height: 1024, deviceScaleFactor: 1, mobile: false });
   await navigate(`${viteOrigin}/practice`);
@@ -314,11 +409,20 @@ try {
   await capture('1536x1024-practice-selection.png');
   await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await navigate(`${viteOrigin}/practice`);
-  await waitFor(async () => (await evaluate('document.querySelectorAll("button.practice-choice").length')) === 8, 'Mobile practice modes did not reload.');
+  await waitFor(async () => (await evaluate('document.querySelectorAll("button.practice-choice").length')) === 7, 'Mobile practice modes did not reload.');
+  await waitFor(async () => (await bodyText()).includes('当前题库：四级理论题库'), 'Practice selection did not finish loading the real bank.');
   await clickContaining('button.practice-choice', '单选题练习');
   try {
     await waitFor(async () => await evaluate('location.pathname === "/practice/answer" && Boolean(document.querySelector(".practice-live-screen[data-question-id] .answer-option"))'), 'A real server-backed practice question did not load.');
   } catch (error) {
+    const safeAuthState = await evaluate(`(async () => {
+      try {
+        const response = await fetch(${JSON.stringify(`${browserApiOrigin}/api/auth/me`)}, { credentials: 'include' });
+        const payload = await response.json();
+        return { status: response.status, identity: payload.username || '', errorCode: payload.error?.code || '', serverAddressSaved: Boolean(localStorage.getItem('theory-exam.server-address')) };
+      } catch (reason) { return { status: 0, identity: '', errorCode: reason instanceof Error ? reason.name : 'fetch-error', serverAddressSaved: Boolean(localStorage.getItem('theory-exam.server-address')) }; }
+    })()`);
+    console.error('Safe auth state after visibility renewal:', JSON.stringify(safeAuthState));
     const state = await evaluate('({ route: location.pathname, body: document.body.innerText.slice(0, 400), practiceScreen: Boolean(document.querySelector(".practice-live-screen")), optionCount: document.querySelectorAll(".mobile-route .answer-option").length })');
     console.error('Safe practice-load diagnostics:', JSON.stringify(state));
     throw error;
@@ -327,6 +431,12 @@ try {
   const firstQuestionId = await evaluate('document.querySelector(".practice-live-screen").dataset.questionId');
   const questionText = await bodyText();
   assert.ok(!questionText.includes('正确答案') && !questionText.includes('标准答案'), 'Practice question view exposed its correct answer before submission.');
+  await click('.mobile-route .question-tools button[aria-label="收藏题目"]');
+  await waitFor(async () => await evaluate('document.querySelector(".mobile-route .question-tools button")?.getAttribute("aria-label") === "取消收藏"'), 'Practice question did not reflect the server-confirmed favorite.');
+  await click('.mobile-route .question-tools button[aria-label="取消收藏"]');
+  await waitFor(async () => await evaluate('document.querySelector(".mobile-route .question-tools button")?.getAttribute("aria-label") === "收藏题目"'), 'Practice question did not reflect the server-confirmed favorite removal.');
+  await click('.mobile-route .question-tools button[aria-label="收藏题目"]');
+  await waitFor(async () => await evaluate('document.querySelector(".mobile-route .question-tools button")?.getAttribute("aria-label") === "取消收藏"'), 'Practice question did not restore the favorite for the saved-account check.');
   await capture('390x844-practice-question.png');
   await cdp('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
   await capture('360x800-practice-question.png');
@@ -367,6 +477,8 @@ try {
   await clickContaining('.question-footer button', '下一题');
   await waitFor(async () => await evaluate(`location.pathname === "/practice/answer" && Number(new URLSearchParams(location.search).get("position")) === 2 && Boolean(document.querySelector(".practice-live-screen[data-question-id] .answer-option")) && document.querySelector(".practice-live-screen").dataset.questionId !== ${JSON.stringify(firstQuestionId)}`), 'Could not move to the next question in the session.');
   const secondQuestionId = await evaluate('document.querySelector(".practice-live-screen").dataset.questionId');
+  await click('.mobile-route .question-tools button[aria-label="收藏题目"]');
+  await waitFor(async () => await evaluate('document.querySelector(".mobile-route .question-tools button")?.getAttribute("aria-label") === "取消收藏"'), 'Second question could not be added to the saved favorites.');
   const secondQuestion = testDatabase.prepare('SELECT answer_json, options_json FROM questions WHERE id = ?').get(secondQuestionId);
   assert.ok(secondQuestion, 'Second question was not read from the imported SQLite bank.');
   const secondCorrect = JSON.parse(secondQuestion.answer_json);
@@ -386,7 +498,21 @@ try {
   await capture('1536x1024-practice-wrong-feedback.png');
   await click('.desktop-practice-actions .button-text');
   await waitFor(async () => (await evaluate('location.pathname')) === '/practice' && await evaluate('Boolean(document.querySelector(".desktop-practice-resume"))'), 'Exited practice session could not be restored from selection.');
-  console.log('PASS browser real Excel question delivery, correct/wrong grading, persisted feedback, and mobile/desktop result layouts');
+  await click('.desktop-practice-resume');
+  await waitFor(async () => (await evaluate('location.pathname')) === '/practice/result' && (await bodyText()).includes('回答错误'), 'Exited practice session did not resume at the last server-saved answer.');
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await navigate(`${viteOrigin}/practice/answer?session=${sessionId}&position=3`);
+  await waitFor(async () => await evaluate('location.pathname === "/practice/answer" && Number(new URLSearchParams(location.search).get("position")) === 3 && Boolean(document.querySelector(".practice-live-screen .answer-option"))'), 'Next unanswered question did not load after session recovery.');
+  await click('.mobile-route .practice-exit-link');
+  await waitFor(async () => (await evaluate('location.pathname')) === '/practice' && await evaluate('Boolean(document.querySelector(".practice-resume-card"))'), 'Recovered practice session could not be paused again.');
+  console.log('PASS browser real Excel question delivery, correct/wrong grading, exit/resume recovery, and mobile/desktop result layouts');
+
+  await navigate(`${viteOrigin}/favorites`);
+  await waitFor(async () => await evaluate('Boolean(document.querySelector(".favorites-list")) && document.querySelector(".favorites-list")?.innerText.includes("2 道")'), 'Favorites page did not show both server-saved questions.');
+  assert.ok(!(await bodyText()).includes('标准答案') && !(await bodyText()).includes('正确答案'), 'Favorites list exposed answer keys.');
+  await click('.mobile-route .favorites-list .favorites-remove-button');
+  await waitFor(async () => await evaluate('document.querySelector(".mobile-route .favorites-mobile-summary strong")?.innerText === "1 题"'), 'Removing a favorite did not update the server-synchronized list count.');
+  console.log('PASS browser favorite add/remove, real list refresh, and answer-key omission');
 
   await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await navigate(`${viteOrigin}/mistakes`);
@@ -414,6 +540,54 @@ try {
   await capture('390x844-p4-review-question.png', false);
   assert.deepEqual(await evaluate('({ width: innerWidth, height: innerHeight, overflow: document.documentElement.scrollWidth > innerWidth })'), { width: 390, height: 844, overflow: false }, '390x844 review question overflowed horizontally.');
   await cdp('Emulation.setDeviceMetricsOverride', { width: 1536, height: 1024, deviceScaleFactor: 1, mobile: false });
+  const desktopReviewOption = await evaluate(`(() => {
+    const option = document.querySelector('.desktop-route .desktop-question-card .answer-option');
+    if (!option) return null;
+    const style = getComputedStyle(option);
+    return { display: style.display, borderStyle: style.borderStyle, background: style.backgroundColor, cursor: style.cursor };
+  })()`);
+  assert.deepEqual(desktopReviewOption && {
+    display: desktopReviewOption.display,
+    borderStyle: desktopReviewOption.borderStyle,
+    background: desktopReviewOption.background,
+    cursor: desktopReviewOption.cursor,
+  }, { display: 'flex', borderStyle: 'solid', background: 'rgb(255, 255, 255)', cursor: 'pointer' }, 'Desktop review choices did not use the styled, keyboard-visible answer controls.');
+  const desktopReviewControls = await evaluate(`(async () => {
+    const option = document.querySelector('.desktop-route .desktop-question-card .answer-option');
+    const submit = document.querySelector('.desktop-route .mistake-answer-actions button:nth-child(2)');
+    const exit = document.querySelector('.desktop-route .mistake-answer-actions button:nth-child(3)');
+    if (!option || !submit || !exit) return null;
+    const initialSubmitDisabled = submit.disabled;
+    const settle = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    option.click();
+    await settle();
+    const optionStyle = getComputedStyle(option);
+    const selectedSubmit = { disabled: submit.disabled, cursor: getComputedStyle(submit).cursor, background: getComputedStyle(submit).backgroundColor };
+    const selected = option.classList.contains('is-selected');
+    return {
+      optionDisplay: optionStyle.display,
+      optionBorder: optionStyle.borderStyle,
+      optionBackground: optionStyle.backgroundColor,
+      initialSubmitDisabled,
+      selected,
+      selectedSubmit,
+      exitCursor: getComputedStyle(exit).cursor,
+      exitBackground: getComputedStyle(exit).backgroundColor,
+    };
+  })()`);
+  assert.deepEqual(desktopReviewControls, {
+    optionDisplay: 'flex',
+    optionBorder: 'solid',
+    optionBackground: 'rgb(244, 247, 255)',
+    initialSubmitDisabled: true,
+    selected: true,
+    selectedSubmit: { disabled: false, cursor: 'pointer', background: 'rgb(53, 105, 242)' },
+    exitCursor: 'pointer',
+    exitBackground: 'rgb(255, 255, 255)',
+  }, 'Desktop review choices and actions must use the site styles and preserve disabled-submit behavior.');
+  await cdp('Page.reload');
+  await waitFor(async () => await evaluate('Boolean(document.querySelector(".desktop-route .desktop-question-card .answer-option")) && !document.querySelector(".desktop-route .desktop-question-card .answer-option.is-selected")'), 'Reload did not restore the unanswered review question before continuing.');
+  assert.equal(await evaluate('document.querySelector(".desktop-route .mistake-answer-actions button:nth-child(2)")?.disabled'), true, 'Review submit must stay disabled until an answer is selected.');
   await capture('1536x1024-p4-review-question.png', false);
   await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await cdp('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
@@ -503,8 +677,7 @@ try {
     FROM exam_question_snapshots s WHERE s.exam_session_id = ? AND s.position = 1`).get(examId);
   assert.ok(firstSnapshot, 'The browser-started exam did not persist its first question snapshot.');
   const safePayload = await evaluate(`(async () => {
-    const token = localStorage.getItem('theory-exam.session-token') || sessionStorage.getItem('theory-exam.session-token.temporary') || '';
-    const response = await fetch('/api/exams/${examId}', { headers: { Authorization: 'Bearer ' + token } });
+    const response = await fetch(${JSON.stringify(`${browserApiOrigin}/api/exams/${examId}`)}, { credentials: 'include' });
     return JSON.stringify({ status: response.status, body: await response.json() });
   })()`);
   assert.equal(JSON.parse(safePayload).status, 200);
@@ -624,23 +797,98 @@ try {
     [table, Number(testDatabase.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count)]));
   const formalDataBeforePreview = countFormalData();
   await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-  await navigate(`${viteOrigin}/exams?preview=1`);
-  await waitFor(async () => (await bodyText()).includes('开发预览不会创建或提交真实考试'), 'Exam preview did not state that it is isolated from production data.');
-  await clickContaining('.exam-settings-screen .mobile-button', '开始模拟考试');
-  await waitFor(async () => (await evaluate('location.pathname === "/exams/answer"')) && (await bodyText()).includes('开发预览倒计时'), 'Development exam preview did not open.');
-  await click('.exam-submit');
-  await waitFor(async () => (await evaluate('location.pathname === "/exams/result"')) && (await bodyText()).includes('开发预览测试数据'), 'Development exam result fixture did not render.');
-  assert.deepEqual(countFormalData(), formalDataBeforePreview, 'Development exam preview modified formal SQLite data.');
-  await navigate(`${viteOrigin}/practice/answer?type=single&preview=1`);
-  await waitFor(async () => (await evaluate('location.pathname === "/practice/answer"')) && (await bodyText()).includes('开发预览'), 'Development practice preview did not open.');
-  await clickAnswer('A');
-  await clickContaining('.question-footer button', '下一题');
-  await waitFor(async () => (await evaluate('location.pathname === "/practice/result"')) && (await bodyText()).includes('回答'), 'Development preview feedback did not render.');
-  assert.deepEqual(countFormalData(), formalDataBeforePreview, 'Development preview modified formal practice data.');
-  console.log('PASS simulated network failure stays unsubmitted; practice and exam previews leave all formal SQLite rows unchanged');
+  if (useProductionGateway) {
+    await navigate(`${viteOrigin}/practice?preview=1`);
+    const productionPreviewState = await evaluate(`({ badge: Boolean(document.querySelector('.preview-badge')), text: document.body.innerText })`);
+    assert.equal(productionPreviewState.badge, false, 'Production Web build exposed a development preview badge.');
+    assert.ok(!productionPreviewState.text.includes('开发预览'), 'Production Web build exposed development preview content.');
+    assert.deepEqual(countFormalData(), formalDataBeforePreview, 'A preview query changed isolated production-gateway business data.');
+    console.log('PASS production Gateway ignores preview fixtures and leaves isolated business data unchanged');
+  } else {
+    await navigate(`${viteOrigin}/exams?preview=1`);
+    await waitFor(async () => (await bodyText()).includes('开发预览不会创建或提交真实考试'), 'Exam preview did not state that it is isolated from production data.');
+    await clickContaining('.exam-settings-screen .mobile-button', '开始模拟考试');
+    await waitFor(async () => (await evaluate('location.pathname === "/exams/answer"')) && (await bodyText()).includes('开发预览倒计时'), 'Development exam preview did not open.');
+    await click('.exam-submit');
+    await waitFor(async () => (await evaluate('location.pathname === "/exams/result"')) && (await bodyText()).includes('开发预览测试数据'), 'Development exam result fixture did not render.');
+    assert.deepEqual(countFormalData(), formalDataBeforePreview, 'Development exam preview modified formal SQLite data.');
+    await navigate(`${viteOrigin}/practice/answer?type=single&preview=1`);
+    await waitFor(async () => (await evaluate('location.pathname === "/practice/answer"')) && (await bodyText()).includes('开发预览'), 'Development practice preview did not open.');
+    await clickAnswer('A');
+    await clickContaining('.question-footer button', '下一题');
+    await waitFor(async () => (await evaluate('location.pathname === "/practice/result"')) && (await bodyText()).includes('回答'), 'Development preview feedback did not render.');
+    assert.deepEqual(countFormalData(), formalDataBeforePreview, 'Development preview modified formal practice data.');
+    console.log('PASS simulated network failure stays unsubmitted; practice and exam previews leave all formal SQLite rows unchanged');
+  }
+
+  const favoriteOwner = testDatabase.prepare(`SELECT u.username AS username FROM favorites f
+    JOIN users u ON u.id = f.user_id LIMIT 1`).get();
+  assert.equal(favoriteOwner?.username, 'p1-browser-learner', 'The persisted favorite was not owned by account A.');
+  await navigate(`${viteOrigin}/me`);
+  await click('.logout-button');
+  await waitFor(async () => (await bodyText()).includes('已退出登录'), 'Account A did not log out before the account-isolation check.');
+  await navigate(`${viteOrigin}/login`);
+  await fill('.login-content input[autocomplete="username"]', 'p1-browser-learner-b');
+  await fill('.login-content input[autocomplete="current-password"]', secondUserPassword);
+  await click('.login-content form button[type="submit"]');
+  await waitFor(async () => await evaluate('Boolean(document.querySelector(".password-gate-card"))'), 'Account B did not enter the required first-login password-change flow.');
+  await fill('.password-gate-card input[autocomplete="current-password"]', secondUserPassword);
+  await fill('.password-gate-card input[autocomplete="new-password"]', secondChangedUserPassword);
+  await fill('.password-gate-card label:nth-of-type(3) input', secondChangedUserPassword);
+  await click('.password-gate-card button[type="submit"]');
+  await waitFor(async () => !await evaluate('Boolean(document.querySelector(".password-gate-card"))'), 'Account B first-login password change did not complete.');
+  await waitFor(async () => (await evaluate('location.pathname')) === '/' && (await bodyText()).includes('p1-browser-learner-b'), 'Account B did not open its own learning dashboard.');
+  const accountBState = await evaluate(`(async () => {
+    const banksResponse = await fetch('/api/banks', { credentials: 'include' });
+    const banks = await banksResponse.json();
+    const bankId = banks.items?.[0]?.id;
+    if (!bankId) return { banksStatus: banksResponse.status, bankId: '', favoritesStatus: 0, favoritesCount: -1, progressStatus: 0, touchedCount: -1, foreignSessionStatus: 0 };
+    const [favoritesResponse, progressResponse, foreignSessionResponse] = await Promise.all([
+      fetch('/api/favorites?bankId=' + encodeURIComponent(bankId), { credentials: 'include' }),
+      fetch('/api/progress?bankId=' + encodeURIComponent(bankId), { credentials: 'include' }),
+      fetch(${JSON.stringify(`${browserApiOrigin}/api/practice/sessions/${sessionId}`)}, { credentials: 'include' }),
+    ]);
+    const favorites = await favoritesResponse.json();
+    const progress = await progressResponse.json();
+    return { banksStatus: banksResponse.status, bankId, favoritesStatus: favoritesResponse.status, favoritesCount: favorites.count,
+      progressStatus: progressResponse.status, touchedCount: progress.touchedCount, foreignSessionStatus: foreignSessionResponse.status };
+  })()`);
+  assert.deepEqual(accountBState, { banksStatus: 200, bankId: accountBState.bankId, favoritesStatus: 200, favoritesCount: 0, progressStatus: 200, touchedCount: 0, foreignSessionStatus: 404 }, 'Account B inherited account A favorites, progress, or practice access.');
+  await navigate(`${viteOrigin}/favorites`);
+  await waitFor(async () => (await bodyText()).includes('还没有收藏的题目。'), 'Account B favorites page leaked account A saved questions.');
+  await navigate(`${viteOrigin}/mistakes`);
+  await waitFor(async () => await evaluate('document.querySelector(".mistake-stats > div:first-child strong")?.innerText === "—" || document.querySelector(".mistake-stats > div:first-child strong")?.innerText === "0"'), 'Account B mistake summary did not load its empty state.');
+  const accountBStorage = await evaluate('JSON.stringify([...Object.values(localStorage), ...Object.values(sessionStorage)])');
+  assert.ok(!accountBStorage.includes(userPassword) && !accountBStorage.includes(changedUserPassword)
+    && !accountBStorage.includes(secondUserPassword) && !accountBStorage.includes(secondChangedUserPassword), 'A browser storage area retained a test password.');
+  await capture('390x844-account-b-empty-state.png', false);
+  const accountBFavoriteSeed = await evaluate(`(async () => {
+    const csrfResponse = await fetch('/api/auth/csrf', { credentials: 'include' });
+    const csrf = await csrfResponse.json();
+    const response = await fetch('/api/favorites/${firstQuestionId}', { method: 'PUT', credentials: 'include',
+      headers: { 'content-type': 'application/json', 'x-csrf-token': csrf.csrfToken }, body: JSON.stringify({ bankId: ${JSON.stringify(accountBState.bankId)} }) });
+    const payload = await response.json();
+    return { csrfStatus: csrfResponse.status, status: response.status, favorite: payload.favorite };
+  })()`);
+  assert.deepEqual(accountBFavoriteSeed, { csrfStatus: 200, status: 200, favorite: true }, 'Isolated account B favorite could not be seeded through the authenticated same-origin API.');
+  await navigate(`${viteOrigin}/favorites`);
+  await waitFor(async () => await evaluate('document.querySelector(".mobile-route .favorites-mobile-summary strong")?.innerText === "1 题"'), 'Account B did not load its own favorite into the Web page.');
+  await click('.mobile-route .favorites-start-button');
+  await waitFor(async () => await evaluate('location.pathname === "/practice/answer"'), 'Account B favorites page did not start a real favorites-only session.');
+  const favoriteSessionId = await evaluate('new URLSearchParams(location.search).get("session")');
+  const favoriteSessionState = await evaluate(`(async () => {
+    const response = await fetch(${JSON.stringify(`${browserApiOrigin}/api/practice/sessions/${favoriteSessionId}`)}, { credentials: 'include' });
+    const payload = await response.json();
+    return { status: response.status, mode: payload.session?.mode, questionCount: payload.session?.questionCount };
+  })()`);
+  assert.deepEqual(favoriteSessionState, { status: 200, mode: 'favorites', questionCount: 1 }, 'Account B favorites practice did not use its real saved question.');
+  assert.ok(!(await bodyText()).includes('标准答案') && !(await bodyText()).includes('正确答案'), 'Favorites practice exposed the answer key before submission.');
+  await click('.mobile-route .practice-exit-link');
+  await waitFor(async () => await evaluate('location.pathname === "/practice"'), 'Account B favorites practice did not exit cleanly.');
+  console.log('PASS browser A/B account switch, first-login gate, isolated favorites/progress/practice access, password-storage checks, and favorites-only practice');
 
   assert.deepEqual(consoleErrors, [], `Browser console/network errors: ${consoleErrors.join(' | ')}; HTTP failures: ${responseFailures.join(' | ')}`);
-  console.log('P3 browser smoke passed.');
+  console.log(useProductionGateway ? 'P5 production Web Gateway browser flow passed (P1–P5 regression).' : 'P5 browser flow passed (P1–P5 regression).');
 } catch (error) {
   failures.push(error instanceof Error ? error.message : String(error));
   for (const failure of failures) console.error(`FAIL ${failure}`);

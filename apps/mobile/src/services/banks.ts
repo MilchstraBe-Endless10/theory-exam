@@ -41,6 +41,7 @@ export function useBanks() {
   const [banks, setBanks] = useState<QuestionBank[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [reloadVersion, setReloadVersion] = useState(0);
   const [selectedBankId, setSelectedBankId] = useState(() => localStorage.getItem(selectedBankKey) ?? '');
 
   useEffect(() => {
@@ -58,6 +59,7 @@ export function useBanks() {
     }
 
     let current = true;
+    setBanks([]);
     setLoading(true);
     setError('');
     apiRequest<{ items: QuestionBank[] }>('/api/banks')
@@ -65,7 +67,7 @@ export function useBanks() {
       .catch(requestError => { if (current) setError(requestError instanceof Error ? requestError.message : '题库读取失败。'); })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
-  }, [preview, serverAddress, user?.id, user?.mustChangePassword]);
+  }, [preview, reloadVersion, serverAddress, user?.id, user?.mustChangePassword]);
 
   const activeBank = banks.find(bank => bank.id === selectedBankId) ?? banks[0] ?? null;
   const selectBank = (id: string) => {
@@ -73,5 +75,5 @@ export function useBanks() {
     localStorage.setItem(selectedBankKey, id);
   };
 
-  return { banks, activeBank, loading, error, selectBank, preview };
+  return { banks, activeBank, loading, error, selectBank, preview, reload: () => setReloadVersion(version => version + 1) };
 }

@@ -1,7 +1,9 @@
-import { createContext, useContext, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
+import { Network } from '@capacitor/network';
+import { Capacitor } from '@capacitor/core';
 import { IconShieldLock } from '@tabler/icons-react';
-import { apiRequest, authSessionEvent, currentToken, persistentSession, previewMode, saveSession, savedServerAddress, serverConfigEvent, type ApiSession, type ApiUser } from '../services/api';
+import { apiRequest, authSessionEvent, currentSessionRevision, persistentSession, previewMode, saveSession, savedServerAddress, serverConfigEvent, type ApiSession, type ApiUser } from '../services/api';
 
 interface AuthState {
   user: ApiUser | null;
@@ -22,6 +24,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [serverAddress, setServerAddress] = useState(savedServerAddress());
   const [serverStatus, setServerStatus] = useState<AuthState['serverStatus']>('disconnected');
   const [sessionExpired, setSessionExpired] = useState(false);
+  const userRef = useRef<ApiUser | null>(null);
+
+  useEffect(() => { userRef.current = user; }, [user]);
 
   const refreshServer = async () => {
     const address = savedServerAddress();
@@ -52,12 +57,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (preview) return;
+    let active = true;
+    let listener: { remove: () => Promise<void> } | undefined;
+    let renewal: Promise<void> | null = null;
+    const refreshSession = () => {
+      void refreshServer();
+      const address = savedServerAddress();
+      if (!address || userRef.current?.mustChangePassword || renewal) return;
+      const revision = currentSessionRevision();
+      if (!userRef.current) {
+        if (!persistentSession()) return;
+        renewal = apiRequest<ApiUser>('/api/auth/me', { base: address })
+          .then(user => {
+            if (active && revision === currentSessionRevision() && !userRef.current) setUser(user);
+          })
+          .catch(() => undefined)
+          .finally(() => { renewal = null; });
+        return;
+      }
+      const userId = userRef.current.id;
+      renewal = apiRequest<ApiSession>('/api/auth/renew', { base: address, method: 'POST', body: {} })
+        .then(async session => {
+          if (!active || revision !== currentSessionRevision() || userRef.current?.id !== userId) return;
+          await saveSession(session, persistentSession());
+          if (active && currentSessionRevision() === revision + 1 && userRef.current?.id === userId) setUser(session.user);
+        })
+        .catch(() => undefined)
+        .finally(() => { renewal = null; });
+    };
+    if (Capacitor.isNativePlatform()) {
+      void Network.getStatus().then(status => { if (active && !status.connected) setServerStatus('unavailable'); });
+      void Network.addListener('networkStatusChange', status => {
+        if (!active) return;
+        if (!status.connected) setServerStatus('unavailable');
+        else refreshSession();
+      }).then(handle => { listener = handle; if (!active) void handle.remove(); });
+      window.addEventListener('theory-exam:app-resume', refreshSession);
+    } else {
+      const onVisible = () => { if (document.visibilityState === 'visible') refreshSession(); };
+      document.addEventListener('visibilitychange', onVisible);
+      return () => { active = false; document.removeEventListener('visibilitychange', onVisible); };
+    }
+    return () => { active = false; void listener?.remove(); window.removeEventListener('theory-exam:app-resume', refreshSession); };
+  }, [preview]);
+
+  useEffect(() => {
+    if (preview) return;
+    let active = true;
+    const revision = currentSessionRevision();
     const address = savedServerAddress();
     setServerAddress(address);
-    if (!address) { setServerStatus('disconnected'); return; }
+    if (!address) { setServerStatus('disconnected'); return () => { active = false; }; }
     void refreshServer();
-    if (!currentToken()) return;
-    apiRequest<ApiUser>('/api/auth/me', { base: address }).then(setUser).catch(() => setUser(null));
+    apiRequest<ApiUser>('/api/auth/me', { base: address })
+      .then(user => { if (active && revision === currentSessionRevision()) setUser(user); })
+      .catch(() => { if (active && revision === currentSessionRevision()) setUser(null); });
+    return () => { active = false; };
   }, [preview]);
 
   const value = useMemo<AuthState>(() => ({
@@ -99,7 +154,7 @@ function FirstPasswordChangeGate() {
       const session = await apiRequest<ApiSession>('/api/auth/password', {
         method: 'POST', body: { currentPassword, newPassword },
       });
-      saveSession(session, persistentSession());
+      await saveSession(session, persistentSession());
       setUser(session.user);
       setCurrentPassword(''); setNewPassword(''); setConfirmation('');
     } catch (reason) {

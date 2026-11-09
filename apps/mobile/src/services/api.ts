@@ -1,3 +1,6 @@
+import { Capacitor } from '@capacitor/core';
+import { SecureStorage } from '@aparajita/capacitor-secure-storage';
+
 export interface ApiUser {
   id: string;
   username: string;
@@ -10,7 +13,8 @@ export interface ApiUser {
 
 export interface ApiSession {
   user: ApiUser;
-  token: string;
+  token?: string;
+  csrfToken?: string;
   expiresAt: string;
 }
 
@@ -22,16 +26,31 @@ export class ApiError extends Error {
 }
 
 const SERVER_KEY = 'theory-exam.server-address';
-const LOCAL_TOKEN_KEY = 'theory-exam.session-token';
-const SESSION_TOKEN_KEY = 'theory-exam.session-token.temporary';
+const NATIVE_TOKEN_KEY = 'session-token';
+const REMEMBER_KEY = 'theory-exam.remember-session';
 const sessionEvent = 'theory-exam:session-change';
 const serverEvent = 'theory-exam:server-change';
+let sessionToken = '';
+let csrfToken = '';
+let sessionActive = false;
+let sessionRevision = 0;
+
+// Remove tokens left by older web builds; browser sessions now use HttpOnly cookies.
+if (typeof window !== 'undefined') {
+  localStorage.removeItem('theory-exam.session-token');
+  sessionStorage.removeItem('theory-exam.session-token.temporary');
+}
 
 export function previewMode(search = window.location.search): boolean {
-  return import.meta.env.DEV && new URLSearchParams(search).get('preview') === '1';
+  return import.meta.env?.DEV === true && new URLSearchParams(search).get('preview') === '1';
+}
+
+export function usesSameOriginWebApi(): boolean {
+  return typeof window !== 'undefined' && !import.meta.env.DEV && !Capacitor.isNativePlatform();
 }
 
 export function savedServerAddress(): string {
+  if (usesSameOriginWebApi()) return window.location.origin;
   return localStorage.getItem(SERVER_KEY) ?? '';
 }
 
@@ -42,6 +61,7 @@ export function adminApiBase(): string {
 
 export function saveServerAddress(value: string): void {
   const normalized = value.trim().replace(/\/+$/, '');
+  if (usesSameOriginWebApi() && normalized !== window.location.origin) throw new ApiError('网页端只能使用当前站点的同源学习服务。', 'SAME_ORIGIN_REQUIRED');
   if (normalized !== savedServerAddress()) clearSession();
   localStorage.setItem(SERVER_KEY, normalized);
   window.dispatchEvent(new Event(serverEvent));
@@ -54,23 +74,62 @@ export function clearServerAddress(): void {
 }
 
 export function currentToken(): string {
-  return localStorage.getItem(LOCAL_TOKEN_KEY) ?? sessionStorage.getItem(SESSION_TOKEN_KEY) ?? '';
+  return sessionToken;
+}
+
+export function currentSessionRevision(): number {
+  return sessionRevision;
 }
 
 export function persistentSession(): boolean {
-  return Boolean(localStorage.getItem(LOCAL_TOKEN_KEY));
+  return localStorage.getItem(REMEMBER_KEY) === 'true';
 }
 
-export function saveSession(session: ApiSession, remember: boolean): void {
-  clearSession(false);
-  (remember ? localStorage : sessionStorage).setItem(remember ? LOCAL_TOKEN_KEY : SESSION_TOKEN_KEY, session.token);
-  window.dispatchEvent(new CustomEvent(sessionEvent, { detail: { user: session.user } }));
+export async function saveSession(session: ApiSession, remember: boolean): Promise<void> {
+  const revision = ++sessionRevision;
+  sessionToken = session.token ?? '';
+  csrfToken = session.csrfToken ?? '';
+  sessionActive = true;
+  localStorage.setItem(REMEMBER_KEY, String(remember));
+  if (Capacitor.isNativePlatform()) {
+    if (remember && session.token) await SecureStorage.setItem(NATIVE_TOKEN_KEY, session.token);
+    else await SecureStorage.removeItem(NATIVE_TOKEN_KEY);
+  }
+  if (revision === sessionRevision) window.dispatchEvent(new CustomEvent(sessionEvent, { detail: { user: session.user } }));
 }
 
-export function clearSession(notify = true): void {
-  localStorage.removeItem(LOCAL_TOKEN_KEY);
-  sessionStorage.removeItem(SESSION_TOKEN_KEY);
+export function clearSession(notify = true, expected?: { revision: number; token?: string }): boolean {
+  if (expected && (expected.revision !== sessionRevision || (expected.token !== undefined && expected.token !== sessionToken))) return false;
+  sessionRevision += 1;
+  sessionToken = '';
+  csrfToken = '';
+  sessionActive = false;
+  localStorage.removeItem(REMEMBER_KEY);
+  if (Capacitor.isNativePlatform()) void SecureStorage.removeItem(NATIVE_TOKEN_KEY).catch(() => undefined);
   if (notify) window.dispatchEvent(new CustomEvent(sessionEvent, { detail: { user: null } }));
+  return true;
+}
+
+async function getSessionToken(): Promise<string> {
+  if (sessionToken) return sessionToken;
+  if (!Capacitor.isNativePlatform() || !persistentSession()) return '';
+  const stored = await SecureStorage.getItem(NATIVE_TOKEN_KEY).catch(() => null) ?? '';
+  if (!sessionToken && stored) {
+    sessionToken = stored;
+    sessionActive = true;
+  }
+  return sessionToken;
+}
+
+async function getCsrfToken(base: string): Promise<string> {
+  if (csrfToken) return csrfToken;
+  try {
+    const response = await fetch(`${base}/api/auth/csrf`, { credentials: 'include' });
+    if (!response.ok) return '';
+    const payload = await response.json() as { csrfToken?: string };
+    csrfToken = payload.csrfToken ?? '';
+  } catch { return ''; }
+  return csrfToken;
 }
 
 export async function apiRequest<T>(
@@ -78,11 +137,20 @@ export async function apiRequest<T>(
   options: { method?: string; body?: unknown; headers?: HeadersInit; base?: string; auth?: boolean; timeoutMs?: number } = {},
 ): Promise<T> {
   if (previewMode()) throw new ApiError('开发预览不会访问或修改正式服务端数据。', 'PREVIEW_ISOLATED');
-  const base = (options.base ?? savedServerAddress() ?? '').replace(/\/+$/, '');
+  const base = (options.base ?? savedServerAddress()).replace(/\/+$/, '');
   if (!base) throw new ApiError('请先连接服务器。', 'SERVER_NOT_CONFIGURED');
   const headers = new Headers(options.headers);
-  const token = options.auth === false ? '' : currentToken();
+  const native = Capacitor.isNativePlatform();
+  const requestRevision = sessionRevision;
+  const token = options.auth === false ? '' : await getSessionToken();
+  if (options.auth !== false && requestRevision !== sessionRevision) throw new ApiError('登录状态已变化，请重试。', 'SESSION_CHANGED');
+  const hadSession = Boolean(token) || (!native && sessionActive);
   if (token) headers.set('Authorization', `Bearer ${token}`);
+  const method = (options.method ?? 'GET').toUpperCase();
+  if (!native && options.auth !== false && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    const csrf = await getCsrfToken(base);
+    if (csrf) headers.set('X-CSRF-Token', csrf);
+  }
   let body: BodyInit | undefined;
   if (options.body instanceof FormData) body = options.body;
   else if (options.body !== undefined) {
@@ -93,7 +161,7 @@ export async function apiRequest<T>(
   const timeout = window.setTimeout(() => controller.abort(), options.timeoutMs ?? 8000);
   let response: Response;
   try {
-    response = await fetch(`${base}${path}`, { method: options.method ?? 'GET', headers, body, signal: controller.signal });
+    response = await fetch(`${base}${path}`, { method, headers, body, signal: controller.signal, credentials: 'include' });
   } catch (error) {
     const message = error instanceof DOMException && error.name === 'AbortError' ? '服务器响应超时。' : '无法连接服务器，请检查地址和网络。';
     throw new ApiError(message, 'SERVER_UNREACHABLE');
@@ -104,13 +172,48 @@ export async function apiRequest<T>(
   try { payload = response.status === 204 ? {} : await response.json(); } catch { payload = {}; }
   if (!response.ok) {
     const value = payload as { error?: { code?: string; message?: string } };
-    if (response.status === 401 && token && !path.endsWith('/login')) {
-      clearSession();
-      window.dispatchEvent(new CustomEvent(sessionEvent, { detail: { user: null, expired: true } }));
+    if (response.status === 401 && options.auth !== false && !path.endsWith('/login') && hadSession) {
+      if (clearSession(true, { revision: requestRevision, ...(token ? { token } : {}) })) {
+        window.dispatchEvent(new CustomEvent(sessionEvent, { detail: { user: null, expired: true } }));
+      }
     }
     throw new ApiError(value.error?.message || `服务器请求失败（HTTP ${response.status}）。`, value.error?.code, response.status);
   }
+  if (requestRevision !== sessionRevision && (path === '/api/auth/me' || path === '/api/auth/renew')) {
+    throw new ApiError('登录状态已变化，请重试。', 'SESSION_CHANGED');
+  }
+  if (path === '/api/auth/me' && options.auth !== false && requestRevision === sessionRevision) sessionActive = true;
   return payload as T;
+}
+
+export async function apiDownload(path: string, onProgress: (received: number, total: number | null) => void): Promise<Uint8Array> {
+  const base = savedServerAddress().replace(/\/+$/, '');
+  if (!base) throw new ApiError('请先连接服务器。', 'SERVER_NOT_CONFIGURED');
+  const headers = new Headers();
+  const token = await getSessionToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  let response: Response;
+  try { response = await fetch(`${base}${path}`, { headers, credentials: 'include' }); }
+  catch { throw new ApiError('无法连接服务器，请检查地址和网络。', 'SERVER_UNREACHABLE'); }
+  if (!response.ok || !response.body) {
+    const payload = await response.json().catch(() => ({})) as { error?: { code?: string; message?: string } };
+    throw new ApiError(payload.error?.message ?? `下载失败（HTTP ${response.status}）。`, payload.error?.code, response.status);
+  }
+  const total = Number(response.headers.get('content-length')) || null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.byteLength;
+    onProgress(received, total);
+  }
+  const result = new Uint8Array(received);
+  let offset = 0;
+  for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.byteLength; }
+  return result;
 }
 
 export const authSessionEvent = sessionEvent;

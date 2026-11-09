@@ -1,0 +1,21 @@
+[Unit]
+Description=Create and verify a daily Theory Exam SQLite backup
+After=theory-exam.service
+
+[Service]
+Type=oneshot
+User=theory-exam
+Group=theory-exam
+WorkingDirectory=/opt/theory-exam
+EnvironmentFile=/etc/theory-exam/theory-exam.env
+Environment=NODE_ENV=production
+Environment=THEORY_DATA_DIR=/var/lib/theory-exam
+ExecStart=/usr/bin/node /opt/theory-exam/apps/server/dist/cli.js db:backup:daily
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+StateDirectory=theory-exam
+StateDirectoryMode=0700
+ReadWritePaths=/var/lib/theory-exam

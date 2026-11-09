@@ -304,4 +304,16 @@ export const migrations: Migration[] = [
       CREATE INDEX review_attempts_round_submitted_idx ON review_attempts(review_round_id, submitted_at);
     `,
   },
+  {
+    version: 6,
+    name: 'csrf_tokens_and_renewal_policy_for_sessions',
+    sql: `
+      ALTER TABLE sessions ADD COLUMN csrf_token TEXT NOT NULL DEFAULT '';
+      ALTER TABLE sessions ADD COLUMN remember INTEGER NOT NULL DEFAULT 0 CHECK (remember IN (0, 1));
+      UPDATE sessions SET remember = CASE
+        WHEN (julianday(expires_at) - julianday(created_at)) * 24 > 24 THEN 1
+        ELSE 0
+      END;
+    `,
+  },
 ];

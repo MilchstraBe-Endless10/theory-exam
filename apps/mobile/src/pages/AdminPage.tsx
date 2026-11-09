@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { IconBook, IconCheck, IconDatabase, IconFileSpreadsheet, IconRefresh, IconShieldLock, IconUsers } from '@tabler/icons-react';
-import { ApiError, adminApiBase, apiRequest, clearSession, currentToken, previewMode, saveSession, type ApiSession, type ApiUser } from '../services/api';
+import { ApiError, adminApiBase, apiRequest, clearSession, previewMode, saveSession, type ApiSession, type ApiUser } from '../services/api';
 import './AdminPage.css';
 
 interface AdminStatus {
@@ -75,7 +75,6 @@ export default function AdminPage() {
       const info = await apiRequest<AdminStatus>('/api/admin/status', { base, auth: false });
       setStatus(info);
       if (!info.adminInitialized) { setAdmin(null); return; }
-      if (!currentToken()) { setAdmin(null); return; }
       const current = await apiRequest<ApiUser>('/api/auth/me', { base });
       if (current.role !== 'admin') { clearSession(); setAdmin(null); setError('当前账号不是管理员，请使用本机管理员账号登录。'); return; }
       setAdmin(current);
@@ -95,7 +94,7 @@ export default function AdminPage() {
         base, method: 'POST', auth: false, body: { username, password, remember: true },
       });
       if (session.user.role !== 'admin') { clearSession(); throw new ApiError('此账号不是管理员。', 'ADMIN_REQUIRED', 403); }
-      saveSession(session, true); setAdmin(session.user); setPassword(''); setMessage(bootstrap ? '本机管理员初始化完成。' : '管理员登录成功。');
+      await saveSession(session, true); setAdmin(session.user); setPassword(''); setMessage(bootstrap ? '本机管理员初始化完成。' : '管理员登录成功。');
       await loadAdminData();
     } catch (authError) { setError(errorText(authError)); }
     finally { setBusy(false); }

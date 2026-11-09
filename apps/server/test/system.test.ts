@@ -11,6 +11,7 @@ import { isLoopbackAddress } from '../src/auth.js';
 import { loadConfig } from '../src/config.js';
 import { openDatabase } from '../src/db/database.js';
 import { migrations } from '../src/db/migrations.js';
+import { digestSessionToken } from '../src/security.js';
 import { parseQuestionWorkbook } from '../src/services/excel-import.js';
 
 const password = `p1-test-${randomBytes(16).toString('hex')}!`;
@@ -90,6 +91,72 @@ test('P1 server, authentication, SQLite, and two-phase Excel imports', async t =
     assert.equal(repeated.response.status, 409);
   });
 
+  await t.test('remembered native sessions renew their rolling expiry without changing the bearer token', async () => {
+    const tokenHash = digestSessionToken(adminToken);
+    const prior = app.db.prepare('SELECT remember FROM sessions WHERE token_hash = ?').get(tokenHash) as { remember: number };
+    assert.equal(prior.remember, 1);
+    const nearExpiry = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    app.db.prepare('UPDATE sessions SET expires_at = ? WHERE token_hash = ?').run(nearExpiry, tokenHash);
+    const renewed = await request('/api/auth/renew', { method: 'POST', token: adminToken, body: {} });
+    assert.equal(renewed.response.status, 200);
+    const payload = renewed.payload as { token: string; expiresAt: string; csrfToken?: string };
+    assert.equal(payload.token, adminToken);
+    assert.ok(Date.parse(payload.expiresAt) > Date.now() + 29 * 24 * 60 * 60 * 1000);
+    assert.equal((app.db.prepare('SELECT remember FROM sessions WHERE token_hash = ?').get(tokenHash) as { remember: number }).remember, 1);
+  });
+
+  await t.test('browser sessions use HttpOnly cookies and require CSRF tokens; production requires secure cookies', async () => {
+    const response = await fetch(`${origin}/api/auth/login`, {
+      method: 'POST',
+      headers: { origin: 'http://localhost:5173', 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'local-admin', password, remember: false }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('access-control-allow-credentials'), 'true');
+    assert.match(response.headers.get('content-security-policy') ?? '', /script-src 'self'/);
+    const session = await response.json() as { token?: string; csrfToken?: string; user: { role: string } };
+    assert.equal(session.token, undefined);
+    assert.equal(session.user.role, 'admin');
+    assert.ok(session.csrfToken);
+    const cookie = response.headers.get('set-cookie')?.split(';')[0] ?? '';
+    assert.match(response.headers.get('set-cookie') ?? '', /HttpOnly/);
+    assert.match(response.headers.get('set-cookie') ?? '', /SameSite=Strict/);
+    assert.ok(cookie.startsWith('theory_session='));
+    const cookieToken = decodeURIComponent(cookie.slice('theory_session='.length));
+    const cookieHash = digestSessionToken(cookieToken);
+    assert.equal((app.db.prepare('SELECT remember FROM sessions WHERE token_hash = ?').get(cookieHash) as { remember: number }).remember, 0);
+
+    const me = await fetch(`${origin}/api/auth/me`, { headers: { cookie } });
+    assert.equal(me.status, 200);
+    const csrf = await fetch(`${origin}/api/auth/csrf`, { headers: { cookie } });
+    assert.equal((await csrf.json() as { csrfToken: string }).csrfToken, session.csrfToken);
+    const rejected = await fetch(`${origin}/api/auth/logout`, { method: 'POST', headers: { cookie, origin: 'http://localhost:5173', 'content-type': 'application/json' }, body: '{}' });
+    assert.equal(rejected.status, 403);
+    const shortExpiry = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    app.db.prepare('UPDATE sessions SET expires_at = ? WHERE token_hash = ?').run(shortExpiry, cookieHash);
+    const renewalWithoutCsrf = await fetch(`${origin}/api/auth/renew`, { method: 'POST', headers: { cookie, origin: 'http://localhost:5173', 'content-type': 'application/json' }, body: '{}' });
+    assert.equal(renewalWithoutCsrf.status, 403);
+    const renewalResponse = await fetch(`${origin}/api/auth/renew`, {
+      method: 'POST',
+      headers: { cookie, origin: 'http://localhost:5173', 'x-csrf-token': session.csrfToken!, 'content-type': 'application/json' },
+      body: '{}',
+    });
+    assert.equal(renewalResponse.status, 200);
+    assert.match(renewalResponse.headers.get('set-cookie') ?? '', /Max-Age=/);
+    const renewal = await renewalResponse.json() as { expiresAt: string; csrfToken: string };
+    assert.ok(Date.parse(renewal.expiresAt) > Date.parse(shortExpiry));
+    assert.equal((app.db.prepare('SELECT expires_at AS expiresAt FROM sessions WHERE token_hash = ?').get(cookieHash) as { expiresAt: string }).expiresAt, renewal.expiresAt);
+    const invalidOrigin = await fetch(`${origin}/api/auth/logout`, { method: 'POST', headers: { cookie, origin: 'https://attacker.invalid', 'x-csrf-token': session.csrfToken, 'content-type': 'application/json' }, body: '{}' });
+    assert.equal(invalidOrigin.status, 403);
+    const loggedOut = await fetch(`${origin}/api/auth/logout`, { method: 'POST', headers: { cookie, origin: 'http://localhost:5173', 'x-csrf-token': session.csrfToken, 'content-type': 'application/json' }, body: '{}' });
+    assert.equal(loggedOut.status, 200);
+    assert.match(loggedOut.headers.get('set-cookie') ?? '', /Max-Age=0/);
+    const revokedRenewal = await fetch(`${origin}/api/auth/renew`, { method: 'POST', headers: { cookie, origin: 'http://localhost:5173', 'x-csrf-token': session.csrfToken!, 'content-type': 'application/json' }, body: '{}' });
+    assert.equal(revokedRenewal.status, 401);
+    assert.equal(loadConfig({ NODE_ENV: 'production' }).cookieSecure, true);
+    assert.throws(() => loadConfig({ NODE_ENV: 'production', COOKIE_SECURE: 'false' }), /COOKIE_SECURE must be true/);
+  });
+
   const created = await request('/api/admin/users', { method: 'POST', token: adminToken, body: { username: 'learner', password } });
   assert.equal(created.response.status, 201);
   const learner = (created.payload as { user: { id: string; username: string } }).user;
@@ -100,6 +167,7 @@ test('P1 server, authentication, SQLite, and two-phase Excel imports', async t =
     assert.equal(login.response.status, 200);
     assert.equal((login.payload as { user: { mustChangePassword: boolean } }).user.mustChangePassword, true);
     let userToken = (login.payload as { token: string }).token;
+    assert.equal((await request('/api/auth/renew', { method: 'POST', token: userToken, body: {} })).response.status, 403);
     const userMe = await request(`/api/auth/me?user_id=${adminSession.user.id}`, { token: userToken });
     assert.equal((userMe.payload as { id: string }).id, learner.id);
     assert.equal((await request('/api/admin/users', { token: userToken })).response.status, 403);
@@ -113,6 +181,7 @@ test('P1 server, authentication, SQLite, and two-phase Excel imports', async t =
     userToken = (again.payload as { token: string }).token;
     assert.equal((await request(`/api/admin/users/${learner.id}`, { method: 'PATCH', token: adminToken, body: { disabled: true } })).response.status, 200);
     assert.equal((await request('/api/auth/me', { token: userToken })).response.status, 401);
+    assert.equal((await request('/api/auth/renew', { method: 'POST', token: userToken, body: {} })).response.status, 401);
     await request(`/api/admin/users/${learner.id}`, { method: 'PATCH', token: adminToken, body: { disabled: false } });
 
     const active = await request('/api/auth/login', { method: 'POST', body: { username: 'learner', password } });

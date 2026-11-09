@@ -192,12 +192,24 @@ test('P2 practice sessions, answer grading, favorites, progress, and ownership',
       assert.equal(favorited.response.status, 200);
       assert.equal(favorited.payload.favorite, true);
     }
+    const secondQuestionId = firstQuestionIds[1]!;
+    assert.equal((await request(`/api/favorites/${secondQuestionId}`, { method: 'PUT', token: userToken, body: { bankId } })).response.status, 200);
     assert.equal(Number((app.db.prepare('SELECT COUNT(*) AS n FROM favorites WHERE question_id = ?').get(questionId) as { n: number }).n), 1);
     const favorites = await request(`/api/favorites?bankId=${bankId}`, { token: userToken });
-    assert.equal(favorites.payload.count, 1);
+    assert.equal(favorites.payload.count, 2);
+    assert.deepEqual(new Set(favorites.payload.items.map((item: { id: string }) => item.id)), new Set([questionId, secondQuestionId]));
+    for (const item of favorites.payload.items) {
+      assert.equal('answer' in item, false);
+      assert.equal('correctAnswer' in item, false);
+    }
+    const favoritesForOtherUser = await request(`/api/favorites?bankId=${bankId}`, { token: otherToken });
+    assert.equal(favoritesForOtherUser.payload.count, 0);
     const removed = await request(`/api/favorites/${questionId}?bankId=${bankId}`, { method: 'DELETE', token: userToken });
     assert.equal(removed.response.status, 200);
     assert.equal((await request(`/api/favorites/${questionId}?bankId=${bankId}`, { method: 'DELETE', token: userToken })).response.status, 200);
+    assert.equal((await request(`/api/favorites?bankId=${bankId}`, { token: userToken })).payload.count, 1);
+    assert.equal((await request(`/api/favorites/${secondQuestionId}?bankId=${bankId}`, { method: 'DELETE', token: userToken })).response.status, 200);
+    assert.equal((await request(`/api/favorites?bankId=${bankId}`, { token: userToken })).payload.count, 0);
     assert.equal((await request(`/api/favorites?bankId=${bankId}`, { token: otherToken })).payload.count, 0);
 
     const unanswered = await createSession('unanswered');
@@ -244,6 +256,8 @@ test('P2 practice sessions, answer grading, favorites, progress, and ownership',
   });
 
   await t.test('existing sessions remain bound to their historical bank version', async () => {
+    const oldFavorite = await request(`/api/favorites/${firstQuestionIds[0]}`, { method: 'PUT', token: userToken, body: { bankId } });
+    assert.equal(oldFavorite.response.status, 200);
     const version2 = randomUUID();
     const newQuestionId = randomUUID();
     const now = new Date().toISOString();
@@ -256,6 +270,9 @@ test('P2 practice sessions, answer grading, favorites, progress, and ownership',
       VALUES (?, ?, ?, 'single', '单选题', '新版本题目', '新版本题目', '{"A":"甲","B":"乙"}', '["A"]', 'A', 'revision.xlsx', '客观题', 2, ?)`)
       .run(newQuestionId, bankId, version2, now);
     app.db.prepare('UPDATE question_banks SET active_version_id = ? WHERE id = ?').run(version2, bankId);
+    const favoritesAfterVersionChange = await request(`/api/favorites?bankId=${bankId}`, { token: userToken });
+    assert.equal(favoritesAfterVersionChange.response.status, 200);
+    assert.equal(favoritesAfterVersionChange.payload.count, 0);
     const resumed = await request(`/api/practice/sessions/${resumableSessionId}/resume`, { method: 'POST', token: userToken });
     assert.equal(resumed.payload.session.bankVersionId, firstVersionId);
     assert.equal(resumed.payload.currentQuestion.question.bankVersionId, firstVersionId);

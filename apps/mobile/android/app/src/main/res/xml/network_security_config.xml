@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="false">118.24.61.190</domain>
+        <domain includeSubdomains="false">192.168.0.107</domain>
+        <trust-anchors>
+            <certificates src="@raw/theory_exam_api_ca" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

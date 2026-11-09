@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">理论考试练习（开发版）</string>
+    <string name="title_activity_main">理论考试练习（开发版）</string>
+    <string name="package_name">com.theoryexam.mobile.dev</string>
+    <string name="custom_url_scheme">com.theoryexam.mobile.dev</string>
+</resources>

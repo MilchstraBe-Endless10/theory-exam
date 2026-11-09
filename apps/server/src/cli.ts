@@ -5,7 +5,9 @@ import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { provisionAccounts, type AccountProvisionSpec } from './account-provisioning.js';
 import { loadConfig } from './config.js';
-import { openMigratedDatabase, readDatabaseStatus, readDatabaseStatusAtPath, inTransaction } from './db/database.js';
+import { openDatabase, openMigratedDatabase, readDatabaseStatus, readDatabaseStatusAtPath, inTransaction } from './db/database.js';
+import { createDatabaseBackup, restoreDatabaseFromBackup, verifyDatabaseBackup } from './db/backup.js';
+import { syncLatestGithubRelease } from './services/update-service.js';
 import { hashPassword, isValidPassword, newId } from './security.js';
 
 async function askHidden(prompt: string): Promise<string> {
@@ -77,6 +79,47 @@ function cleanTestDatabase(): void {
   stdout.write('Temporary test database files removed.\n');
 }
 
+function createBackup(kind: 'manual' | 'daily'): void {
+  const config = loadConfig();
+  if (!existsSync(config.databasePath)) throw new Error('Database file does not exist; no backup was created.');
+  const db = openDatabase(config.databasePath);
+  try {
+    const path = createDatabaseBackup(db, join(dirname(config.databasePath), 'backups'), kind);
+    stdout.write(`${JSON.stringify({ state: 'verified', path, kind })}\n`);
+  } finally { db.close(); }
+}
+
+function verifyBackup(): void {
+  const index = process.argv.indexOf('--file');
+  const path = index >= 0 ? process.argv[index + 1] : '';
+  if (!path) throw new Error('Usage: db:backup:verify --file /absolute/path/backup.sqlite');
+  const result = verifyDatabaseBackup(path);
+  stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  if (!result.valid) process.exitCode = 1;
+}
+
+async function restoreBackup(): Promise<void> {
+  const index = process.argv.indexOf('--file');
+  const source = index >= 0 ? process.argv[index + 1] : '';
+  if (!source || !process.argv.includes('--confirm') || !process.argv.includes('--service-stopped') || !stdin.isTTY) {
+    throw new Error('Usage: db:restore --file /absolute/path/backup.sqlite --service-stopped --confirm (interactive local terminal only). Stop the systemd service first.');
+  }
+  const config = loadConfig();
+  if (!existsSync(config.databasePath)) throw new Error('Current database is missing; restore requires an existing database to back up first.');
+  const verification = verifyDatabaseBackup(source);
+  if (!verification.valid) throw new Error(`Refusing invalid backup: ${verification.message}`);
+  const db = openDatabase(config.databasePath);
+  let currentBackup: string;
+  try { currentBackup = createDatabaseBackup(db, join(dirname(config.databasePath), 'backups'), 'manual'); }
+  finally { db.close(); }
+  const readline = createInterface({ input: stdin, output: stdout });
+  const answer = await readline.question(`Current DB was backed up to ${currentBackup}. Type RESTORE to replace it: `);
+  readline.close();
+  if (answer !== 'RESTORE') throw new Error('Restore cancelled; current database was not replaced.');
+  restoreDatabaseFromBackup(source, config.databasePath);
+  stdout.write(`Database restored from verified backup. Run db:status, then migrate only if explicitly approved.\n`);
+}
+
 const command = process.argv[2] ?? 'status';
 if (command === 'admin:init') {
   await adminInit();
@@ -92,6 +135,23 @@ if (command === 'admin:init') {
     const status = readDatabaseStatus(db);
     stdout.write(`${JSON.stringify({ state: 'ready', ...status }, null, 2)}\n`);
   } finally { db.close(); }
+} else if (command === 'db:backup') {
+  createBackup('manual');
+} else if (command === 'db:backup:daily') {
+  createBackup('daily');
+} else if (command === 'db:backup:verify') {
+  verifyBackup();
+} else if (command === 'db:restore') {
+  await restoreBackup();
+} else if (command === 'updates:sync') {
+  const config = loadConfig();
+  const result = await syncLatestGithubRelease({
+    repository: process.env.GITHUB_REPOSITORY ?? 'MilchstraBe-Endless10/theory-exam',
+    token: process.env.GITHUB_TOKEN ?? '',
+    cacheDirectory: config.updateCacheDirectory,
+    releaseTag: process.env.GITHUB_RELEASE_TAG,
+  });
+  stdout.write(`${JSON.stringify({ state: 'cached-and-verified', ...result })}\n`);
 } else if (command === 'accounts:provision') {
   const manifestArgument = process.argv.indexOf('--manifest');
   const manifestPath = manifestArgument >= 0 ? process.argv[manifestArgument + 1] : '';
@@ -119,5 +179,5 @@ if (command === 'admin:init') {
     stdout.write(`Created ${result.createdCount} ordinary user accounts. One-time credentials: ${result.credentialsPath} (mode 0600).\n`);
   } finally { db.close(); }
 } else {
-  throw new Error('Usage: cli.ts [status|migrate|clean-test|admin:init|accounts:provision --manifest PATH --confirm]');
+  throw new Error('Usage: cli.ts [status|migrate|db:backup|db:backup:daily|db:backup:verify --file PATH|db:restore --file PATH --service-stopped --confirm|updates:sync|clean-test|admin:init|accounts:provision --manifest PATH --confirm]');
 }
