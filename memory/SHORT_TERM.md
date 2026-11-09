@@ -2,6 +2,17 @@
 
 > 交接快照；不得记录真实密码、密码哈希或凭据文件内容。
 
+## 仓库公开与生产坐标脱敏（2026-11-09 CST）
+- 用户批准策略：**先脱敏再公开，不重写 git 历史**。
+- PR #10 `chore/public-release-prep` 已合并（前一个 PR #9 记录主线整合；PR #8 为 feat→main 主线合并）。脱敏提交 `b1f935f`，合并后 main `d879ecb688bc60a435bd9755e5c83d49ab55894b`。
+- 脱敏范围：公网 IP/端口 → `<PUBLIC_HOST>`/`<PUBLIC_API_PORT>`/`<PUBLIC_WEB_PORT>`；LAN IP → `<LAN_IP>`；家目录 → `~`；备份盘/AI 产出盘 → `<BACKUP_VOLUME>`/`<AI_ARTIFACT_ROOT>`。覆盖 README、docs（ARCHITECTURE/PROJECT_GUIDE/OPERATIONS-P5/ROADMAP）、memory（MID_TERM/SHORT_TERM）、maintenance.service 模板。
+- **Android 网络安全配置改为构建期外置注入**（关键设计变更）：Android IP 级 trust-anchor 不支持通配，写死 IP 是功能必需。新增 Gradle `prepareNetworkSecurityConfig`，从 `THEORY_ANDROID_TRUST_HOSTS_FILE`（默认 `~/.config/theory-exam/p5b-deploy-20261022/android-trust-hosts.txt`，0600）生成；仓库内保留"不信任任何主机"的 deny-by-default 默认值。任务对缺失/空/非 IPv4 清单**一律构建失败**。该文件与 CA 资源均已 untrack 并加入 `.gitignore`。
+- 测试内真实 IP 换为 RFC 5737 文档地址 `203.0.113.8` 与示例 `192.168.1.50`；**未删改任何断言**，同 IP 不同端口语义保留。
+- 脱敏后完整重跑：服务端 test 62/62、test:browser 12/12、test:web:browser 10/10；客户端 UI smoke 20/20、会话 6/6；`:app:assembleDebug` BUILD SUCCESSFUL 且 APK 内仍含真实信任主机。
+- 公开后验证：未登录 `github.com/.../theory-exam` 200、raw README 200、`docs/assets/` 图片 200。
+- 全历史凭据终检：无 `PRIVATE KEY`、无 `ghp_/gho_/AKIA/xox` 命中；历史文件类型无 `.env/.pem/.key/.jks/.sqlite/.xlsx`。
+- 遗留：旧提交里仍可翻到原地址（按批准不重写历史）。
+
 ## main 主线整合（2026-11-09 CST）
 - 任务：把 P5-A / P5-B 已验收成果从 `feat/p5-a-android-security` 正式合入 `main`，并重写面向公开的 README。
 - 基线：fetch 后 `origin/main`=`b6cdb05`（停在 P4），`origin/feat/p5-a-android-security`=`1c060d2`；功能分支 19 commits ahead / 0 behind，merge-base 即 main HEAD，`git merge-tree` 无冲突标记。
