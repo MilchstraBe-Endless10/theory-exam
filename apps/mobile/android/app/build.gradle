@@ -22,6 +22,52 @@ tasks.register('prepareApiCaResource') {
     }
 }
 
+// 网络安全配置里必须写死真实部署主机的 IP（Android 的 IP 级 trust-anchor 不支持通配）。
+// 这些 IP 属于生产拓扑，不能提交到公开仓库；因此和 CA 证书一样从仓库外注入。
+def trustHostsFile = new File(
+    System.getenv('THEORY_ANDROID_TRUST_HOSTS_FILE')?.trim()
+        ?: new File(System.getProperty('user.home'),
+            '.config/theory-exam/p5b-deploy-20261022/android-trust-hosts.txt').absolutePath)
+def networkSecurityConfigFile = file('src/main/res/xml/network_security_config.xml')
+
+tasks.register('prepareNetworkSecurityConfig') {
+    inputs.file(trustHostsFile)
+    inputs.property('checksum', { trustHostsFile.isFile() ? trustHostsFile.text : '' })
+    outputs.file(networkSecurityConfigFile)
+    doLast {
+        if (!trustHostsFile.isFile()) {
+            throw new GradleException('The Android trust-host list is missing. Set THEORY_ANDROID_TRUST_HOSTS_FILE to a protected external file with one host per line (no private keys, no credentials).')
+        }
+        def hosts = trustHostsFile.readLines()
+            .collect { it.trim() }
+            .findAll { it && !it.startsWith('#') }
+        if (hosts.isEmpty()) {
+            throw new GradleException('The Android trust-host list is empty; refusing to build an APK that trusts no API host.')
+        }
+        def disallowed = hosts.findAll { !(it ==~ /\d{1,3}(\.\d{1,3}){3}/) }
+        if (disallowed) {
+            throw new GradleException('Android trust hosts must be plain IPv4 literals; unexpected entries: ' + disallowed.join(', '))
+        }
+        def domains = hosts.collect { '        <domain includeSubdomains="false">' + it + '</domain>' }.join('\n')
+        def config = """<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="false">
+${domains}
+        <trust-anchors>
+            <certificates src="@raw/theory_exam_api_ca" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>
+"""
+        if (networkSecurityConfigFile.isFile() && networkSecurityConfigFile.text == config) {
+            return
+        }
+        networkSecurityConfigFile.parentFile.mkdirs()
+        networkSecurityConfigFile.setText(config, 'UTF-8')
+    }
+}
+
 android {
     namespace = "com.theoryexam.mobile.dev"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -83,7 +129,7 @@ dependencies {
 apply from: 'capacitor.build.gradle'
 
 tasks.named('preBuild').configure {
-    dependsOn(tasks.named('prepareApiCaResource'))
+    dependsOn(tasks.named('prepareApiCaResource'), tasks.named('prepareNetworkSecurityConfig'))
 }
 
 try {

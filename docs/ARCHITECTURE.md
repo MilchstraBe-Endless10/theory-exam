@@ -7,9 +7,9 @@
 
 ## 局域网 / frp 双通道
 当前部署基线（2026-10-23）：
-- 继续使用用户现有 MeFrp，保留两条 TCP 透明隧道。Android API 公网入口为 `118.24.61.190:30946`，Web 公网入口为 `118.24.61.190:10393`；用户不使用域名或 DDNS。
+- 继续使用用户现有 MeFrp，保留两条 TCP 透明隧道。Android API 公网入口为 `<PUBLIC_HOST>:<PUBLIC_API_PORT>`，Web 公网入口为 `<PUBLIC_HOST>:<PUBLIC_WEB_PORT>`；用户不使用域名或 DDNS。
 - API 隧道对应本机 HTTPS Fastify `127.0.0.1:3000`；Web 隧道对应本机 HTTPS Gateway `127.0.0.1:8080`。TCP 节点不终止业务 TLS。
-- API 同时提供当前 LAN `192.168.0.107:3000` HTTPS listener；该 IPv4 来自 DHCP，未确认固定租约。证书 SAN 包括当前 WAN IP、LAN IP 和 loopback；地址变化需重新签发证书并更新受影响的 Android 信任范围。
+- API 同时提供当前 LAN `<LAN_IP>:3000` HTTPS listener；该 IPv4 来自 DHCP，未确认固定租约。证书 SAN 包括当前 WAN IP、LAN IP 和 loopback；地址变化需重新签发证书并更新受影响的 Android 信任范围。
 - Web Gateway、API 和备份服务通过项目 user systemd 常驻；管理 listener `127.0.0.1:3001` 不加入隧道。实际服务状态和数据基线见 `memory/SHORT_TERM.md`。
 - 本地 API/Web 使用不同私有 CA。普通浏览器要单独导入 Web CA；Android APK 中只包含 API CA 公钥证书，不包含 CA/叶证书私钥。
 - P5-B 正式库已迁移 V6 并导入批准的 1,283 道题。完整 Web 浏览器/视觉验收仍在进行，故不得把 P5-B 整体标记完成。
@@ -20,7 +20,7 @@
 - Web 正式构建在非开发浏览器环境固定使用当前 `location.origin` 的同源 API 与 HttpOnly Cookie；Android Capacitor 仍连接用户配置的 API 地址并用原生安全存储/Bearer。考试答案沿用服务器逐题版本与 requestId 冲突处理，网关透明传递这些请求头与 Cookie。
 - 证书策略固定为纯 IP HTTPS + 分开的 API/Web 私有 CA。服务端 CA/叶证书私钥保存在仓库外受限目录；客户端不使用 trust-all，不关闭 IP SAN 校验。Android APK 仅对 API 公网/LAN IP 配置限定信任；浏览器需在本机信任 Web CA 才能无警告访问 Web。
 - 如公网节点 IP 或 LAN IP 变化，应先确认地址和证书 SAN，再用原受信 CA 重新签发叶证书；若 CA 也轮换，需先发布包含新 CA 的递增 Android versionCode 包，并在所有访问 Web 的电脑上重新导入 Web CA。旧 CA 只在新证书链验证完成后撤销/移除。
-- 局域网访问不得回退到未验证 HTTP。LAN 固定 IP 需通过路由器静态租约或手工网络配置另行确认；目前 `192.168.0.107` 只是当前 DHCP 地址。
+- 局域网访问不得回退到未验证 HTTP。LAN 固定 IP 需通过路由器静态租约或手工网络配置另行确认；目前 LAN 地址（`<LAN_IP>`）只是当前 DHCP 地址。
 - 管理 API 由服务端严格限制为本机回环/可信本机管理入口，不因普通用户路由在公网暴露而可调用。
 - 默认不启用不受信任的自签名证书忽略验证，也不允许直接公开 HTTP 密码登录接口。
 
@@ -76,7 +76,7 @@ npm --prefix apps/server run web:start
 
 ## 当前已知运行值与限制
 - 主机：Omarchy/Arch Linux，Node.js 26.8.2，user systemd；项目服务以用户注销后仍运行的 Linger 模式启用。
-- 公网：`118.24.61.190:30946`（API）、`118.24.61.190:10393`（Web），均为 MeFrp TCP；不使用域名。
-- LAN：`192.168.0.107`，当前 DHCP 地址，尚未确认固定租约。
+- 公网：`<PUBLIC_HOST>:<PUBLIC_API_PORT>`（API）、`<PUBLIC_HOST>:<PUBLIC_WEB_PORT>`（Web），均为 MeFrp TCP；不使用域名。
+- LAN：`<LAN_IP>`，当前 DHCP 地址，尚未确认固定租约。
 - 数据库：本机 SQLite V6；真实题库 1,283 道；日常业务和管理数据库不进入 Git。
 - 仓库：`MilchstraBe-Endless10/theory-exam`，Private。dev.10 Debug APK 测试交付，不代表 P6 正式签名或升级链完成。

@@ -68,3 +68,8 @@ playwright-report/
 **/*.keystore
 **/android/app/build/
 **/android/build/
+
+# Android network security config is generated at build time from an out-of-repo
+# trust-host list (THEORY_ANDROID_TRUST_HOSTS_FILE); production IPs must not be committed.
+apps/mobile/android/app/src/main/res/xml/network_security_config.xml
+apps/mobile/android/app/src/main/res/raw/theory_exam_api_ca.pem

@@ -20,7 +20,7 @@ before(async () => {
     ...process.env,
     NODE_ENV: 'test',
     THEORY_DATABASE_PATH: join(temporaryDirectory, 'unused.sqlite'),
-    CORS_ORIGINS: 'https://118.24.61.190:10393',
+    CORS_ORIGINS: 'https://203.0.113.8:10393',
   });
   const config = { ...base, environment: 'production' as const, cookieSecure: true };
   app = await buildApp({ config, database, surface: 'business', runBackgroundJobs: false, logger: false });
@@ -38,15 +38,16 @@ after(async () => {
   rmSync(temporaryDirectory, { recursive: true, force: true });
 });
 
+// 203.0.113.8 is RFC 5737 TEST-NET-3 documentation space, not a real deployment host.
 test('browser cookies are accepted on the configured Web port, not the same-IP API port', async () => {
   const web = await app.inject({ method: 'GET', url: '/api/auth/me', headers: {
-    host: '118.24.61.190:10393', cookie,
+    host: '203.0.113.8:10393', cookie,
   } });
   assert.equal(web.statusCode, 200);
   assert.equal((web.json() as { username: string }).username, 'cookie-origin-user');
 
   const api = await app.inject({ method: 'GET', url: '/api/auth/me', headers: {
-    host: '118.24.61.190:30946', cookie,
+    host: '203.0.113.8:30946', cookie,
   } });
   assert.equal(api.statusCode, 403);
   assert.equal((api.json() as { error: { code: string } }).error.code, 'COOKIE_HOST_MISMATCH');
@@ -54,7 +55,7 @@ test('browser cookies are accepted on the configured Web port, not the same-IP A
 
 test('cross-port Web Origin cannot call the public API listener directly', async () => {
   const response = await app.inject({ method: 'OPTIONS', url: '/api/auth/me', headers: {
-    host: '118.24.61.190:30946', origin: 'https://118.24.61.190:10393',
+    host: '203.0.113.8:30946', origin: 'https://203.0.113.8:10393',
     'access-control-request-method': 'GET',
   } });
   assert.equal(response.statusCode, 403);

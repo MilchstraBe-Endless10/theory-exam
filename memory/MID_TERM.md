@@ -42,7 +42,7 @@
 - [ ] P6 系统回归、发行准备与 GitHub 发布
 
 ## P5-B 运维收尾核验（2026-10-23）
-- 三个生产 user services 均 active/enabled、`Restart=on-failure`（3 秒）、重启计数 0，Linger=yes；新增 `theory-exam-p5b-maintenance.timer` 每日运行，先用 SQLite `VACUUM INTO` 生成 V6 一致性备份，再复制到独立 `/mnt/Server_Data_Backup` 文件系统并验证。
+- 三个生产 user services 均 active/enabled、`Restart=on-failure`（3 秒）、重启计数 0，Linger=yes；新增 `theory-exam-p5b-maintenance.timer` 每日运行，先用 SQLite `VACUUM INTO` 生成 V6 一致性备份，再复制到独立 `<BACKUP_VOLUME>` 文件系统并验证。
 - 最新跨盘备份 `daily-2026-10-23T04-36-47-973Z-fcbd1479.sqlite` 为 0600；隔离恢复后 `integrity_check=ok`、FK 违规 0、迁移状态 ready、题目 1,283、启用题库 1。备份盘位于独立于 root NVMe 的双盘 ext4 LVM；这不是异地备份。
 - API/Web 叶证书有效至 2027-11-23，CA 有效至 2036-10-19；私钥目录 0700、密钥 0600。timer 每日核验链与公网/LAN/loopback IP SAN，并在叶证书 60 天、CA 180 天内到期时使 unit 失败并写 journal；未自动重签/轮换。
 - 严格 CA 下公网端口 30946/10393 和本机 loopback/LAN listeners 的 health 都返回 200、migrationVersion=6；公网管理页面/API 404。Cookie/Origin 对同 IP 不同端口检查 2/2 通过（Web 同源 204、跨端口 403）。
@@ -66,7 +66,7 @@
 - 新增服务端 /api/exams 端点：开始/恢复、活动考试、历史、单题答案同步、交卷与结果读取。考试期间不返回答案键；答案用逐题版本与 requestId 防止旧写覆盖并支持重试。服务端启动、15 秒扫描及到期读取时结算超时，只计算截止前确认的答案。结果交易幂等，错答只计一次，未答不计错题；历史结果保留题库版本快照。
 - 手机与桌面考试设置、答题、服务器倒计时、180 题答题卡、标记、同步状态、二次交卷、成绩复盘和考试记录接入真实 API；首页最近考试成绩读取服务端历史。开发 Preview 未写入业务数据。
 - apps/server 的 typecheck、build、test 全通过；服务端全套 30 项通过，其中 P3 覆盖真实 Excel 导入、180 题唯一组卷/100 分、答案保密、规则缺失/题量不足、多选严格判分、请求幂等/版本冲突、超时边界、重启恢复、跨账号隔离、首次改密门禁和历史版本复盘。apps/mobile 类型检查、构建及 UI smoke 全通过（13 项）。
-- Chromium 真实浏览器流程全通过：临时 SQLite 导入本地 Excel 1,283 题（单选 845、多选 38、判断 400）；创建考试、离线后重试、180 题答题卡跳题、页面刷新/退出登录/重新登录恢复、交卷确认、评分、结果历史、桌面入口及 Preview 数据隔离。截图目录：/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/图片与设计/理论考试练习系统/P3-模拟考试验收-20261019-10/，包括 390×844、360×800 与 1536×1024 画面。浏览器 smoke 中暴露的异步同步等待竞态已改为等待实际数据库确认后复测通过。
+- Chromium 真实浏览器流程全通过：临时 SQLite 导入本地 Excel 1,283 题（单选 845、多选 38、判断 400）；创建考试、离线后重试、180 题答题卡跳题、页面刷新/退出登录/重新登录恢复、交卷确认、评分、结果历史、桌面入口及 Preview 数据隔离。截图目录：<AI_ARTIFACT_ROOT>/图片与设计/理论考试练习系统/P3-模拟考试验收-20261019-10/，包括 390×844、360×800 与 1536×1024 画面。浏览器 smoke 中暴露的异步同步等待竞态已改为等待实际数据库确认后复测通过。
 - 视觉复核：手机设置、答题、答题卡、结果及桌面答题/复盘布局正常；360×800 答题卡可滚动访问 180 题。结果为长页面，可滚动查看完整复盘。未观察到横向溢出或桌面首页回归。
 - 正式本机库最初在 P3 开发前为 V3、4 个普通账号、无管理员、无题库。检查时运行 npm run db:status，而该 CLI 的 openDatabase() 会自动应用迁移，因此 V4 已被应用到正式库；迁移为增量 schema，未删除/重置账号或导入题库。随后只读核实：migration 4、用户 4、管理员 0、题库 0、进行中考试 0。旧服务优雅停止，当前 127.0.0.1:3000 运行 P3 构建；健康检查为 200/V4，未认证考试 API 返回 401。正式库没有初始化管理员，也没有导入真实题库。
 - 四级规则保持 120 单选×0.5、20 多选×1、40 判断×0.5，共 180 题、100 分、90 分钟。长期规则未变化，memory/LONG_TERM.md 未修改。
@@ -142,7 +142,7 @@
 - 新增 V5 增量迁移，V1–V4 未改写。独立复习轮次固定用户、题库版本、筛选、策略、数量、题目及顺序，并保存逐题作答、状态、时间与历史；唯一约束和事务保护同轮重复请求及状态更新。掌握状态为待复习 0、巩固中 1、已掌握 2；错误会将其归零并只记一次。普通练习/考试正确不推进掌握，相关答错重置错题状态。已掌握记录保留，可筛选复练。
 - 提供复习轮次创建、当前/恢复、题目、答题、退出、历史与统计 API；组合题型、状态、薄弱优先和 10/20/全部数量筛选由服务端执行。薄弱顺序为待复习优先、再巩固中，同状态按错误次数降序。题目答题前不泄露答案，反馈只在服务端确认写入后返回。手机错题设置/答题/反馈/历史及桌面错题本改为真实服务端数据，Preview 隔离。
 - 自动化验证：`apps/server` 类型检查、构建通过，测试 **48 项通过**，包含 Issue #6 只读库验证和 P4 三态、不同轮次、重试幂等、重复错答、筛选、随机不重复、退出恢复、版本/账号隔离及持久化；`apps/mobile` 类型检查、构建通过，UI smoke **14 项通过**。
-- Chromium 使用隔离 SQLite 及本机真实 Excel 完成实际流程，导入 **1,283 题（单选 845、多选 38、判断 400）**；验证普通练习错答入错题、单选/薄弱优先/10题组合、实际题量不足提示、退出后恢复、不同轮次连续正确后成为已掌握、历史结果及桌面错题本。390×844、360×800、1536×1024 截图均检查，视觉与交互问题已修正。截图目录：`/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/图片与设计/理论考试练习系统/P4-错题复习验收-20261019-03/`。
+- Chromium 使用隔离 SQLite 及本机真实 Excel 完成实际流程，导入 **1,283 题（单选 845、多选 38、判断 400）**；验证普通练习错答入错题、单选/薄弱优先/10题组合、实际题量不足提示、退出后恢复、不同轮次连续正确后成为已掌握、历史结果及桌面错题本。390×844、360×800、1536×1024 截图均检查，视觉与交互问题已修正。截图目录：`<AI_ARTIFACT_ROOT>/图片与设计/理论考试练习系统/P4-错题复习验收-20261019-03/`。
 - 正式数据库状态未改变：V4、四名普通账号、无管理员、无正式题库。本阶段不初始化管理员、不重置账号、不导入正式题库。正式启用仍需本机管理员操作及题库导入。
 - API 文档、架构、ADR、路线图及本记忆已更新；`memory/LONG_TERM.md` 未改（长期业务规则不变）。P4 实现提交 `35466874d28cb7f018df72bd46e4586c5f93e7f3`（[GitHub commit](https://github.com/MilchstraBe-Endless10/theory-exam/commit/35466874d28cb7f018df72bd46e4586c5f93e7f3)）已普通推送；推送后 `HEAD`、`origin/main`、`git ls-remote` 与 GitHub API commit 均一致。仓库仍为 Private。Issue #6（只读状态修复）与 Issue #5（P4）均在全部验证通过后以 completed 关闭。
 
@@ -164,7 +164,7 @@
 - `/api/*` 仅代理 `/api/health`、认证、题库、练习、收藏、进度、考试、错题复习及更新业务路由。管理/bootstrap/未知 API/编码路径/点文件/不支持方法在 proxy 前拒绝，且不触发 SPA fallback。网关不转发 `Forwarded`、`X-Forwarded-*` 和 `X-Real-IP`，API 响应禁缓存。Fastify business surface 同样不注册管理页面或 API。
 - 非开发浏览器构建固定使用当前 origin；沿用 `HttpOnly; SameSite=Strict; Secure` Cookie（生产 API 强制 Secure）、CSRF token 与精确 Origin allowlist。Android Capacitor 继续走服务器地址和原生 secure-storage Bearer。隔离 SQLite 集成验证两种会话最终关联同一用户/DB，错误 Origin/缺 CSRF 的写操作被拒；浏览器响应不含 Bearer token。既有 P3 `expectedVersion`/`requestId` 考试答案冲突逻辑未改，服务端回归覆盖。
 - 安全隔离实测：业务 Fastify listener 与 Web Gateway 对 `/admin`、`/api/admin/*`、bootstrap 及大小写/编码/重复分隔变体均不可达（404）；故意会对管理路由回 200 的测试上游未收到任何管理路径。正式 3000 与真实数据库未接入测试。
-- 验证：`apps/server` typecheck/build 通过、**59/59** 测试通过；`apps/mobile` typecheck/build 通过、UI smoke **14/14**；`npm run test:web:browser` 用 production dist、隔离 SQLite 和 Chromium 验证同源登录、HttpOnly、无 token storage、CSRF 正反向、管理路径拒绝、`/practice` 刷新以及 390×844/1536×1024 无横向溢出。截图：`/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/图片与设计/理论考试练习系统/P5-A-Web入口浏览器验收-20261019/`。
+- 验证：`apps/server` typecheck/build 通过、**59/59** 测试通过；`apps/mobile` typecheck/build 通过、UI smoke **14/14**；`npm run test:web:browser` 用 production dist、隔离 SQLite 和 Chromium 验证同源登录、HttpOnly、无 token storage、CSRF 正反向、管理路径拒绝、`/practice` 刷新以及 390×844/1536×1024 无横向溢出。截图：`<AI_ARTIFACT_ROOT>/图片与设计/理论考试练习系统/P5-A-Web入口浏览器验收-20261019/`。
 - 另以 `NODE_ENV=test WEB_HOST=127.0.0.1 WEB_PORT=8080 WEB_API_TARGET=http://127.0.0.1:3000 npm run web:dev` 启动正式 CLI 路径，`/` 与 `/practice` 均返回 200/no-cache，`/api/admin/status` 返回 404；随后停止测试进程。生产模式缺 cert/key 的拒绝启动也实际验证（预期 exit 1）。
 - TLS 研究：MeFrp TCP 高位端口本身不提供浏览器/APP 到本机 TLS。普通浏览器不会使用 Android APP 的私有信任锚，不能忽略证书警告。候选为免费可控 DNS 子域名 + DNS-01 公信证书 + TCP TLS 透传；Let’s Encrypt IP cert 有效约 160 小时并要求通过标准 80/443 验证 IP 控制，当前 MeFrp 分配 IP/高位端口不满足可控性。未选 DNS 服务、未申请证书；手机 API 3000 仍为旧 P4/V4 HTTP 进程，公网禁止开放。
 - 边界确认：正式库 V4/四个普通账号，没有迁移、密码、管理员、题库操作；当前旧 3000 与原 Vite preview 进程未被替换；Web fixture 只用临时 SQLite/API，已停止；8080 已释放。两条 MeFrp 隧道未启动，未改 systemd/证书/公网配置。
@@ -175,7 +175,7 @@
 ## P5-A 本机 Android 首次验收失败记录（2026-10-20；后续 KVM/API35 复测见文末）
 - 用户批准下载并创建本机 AVD。本机 Google Emulator 37.2.12 / Android 16 API 36 x86_64 已出现可视化系统窗口；APK SHA-256 `329e776eb46e298c17efce70c7424c9c050e9374b3379bdad41ea2664c785f9e` 与指定版本匹配，包管理器确认安装，Activity 可启动。
 - 模拟器因宿主无 `/dev/kvm`、CPU 未暴露 VT-x 而以 TCG 运行。启动页之后 WebView 创建 `SIGTRAP`，涉及 `libmonochrome_64.so` / `AwContents` / `WebViewChromium` / `CapacitorWebView`；四种图形模式未修复。React 页面未出现，不能判定 APK 页面/导航通过。QEMU 关闭期间 SIGSEGV，coredumpctl 本轮列出 5 条；未复制 core。未改系统内核、全局 Java、GPU/Hyprland 配置。
-- 证据目录：截图 `/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/图片与设计/理论考试练习系统/P5-A-本机Android验收-20261020/`；模拟器日志及交付报告 `/mnt/Server_Data_Center/Personal_Files(个人文件)/Cosmos_File/AI产出数据文件/报告与研究/理论考试练习系统/P5-A-本机Android验收-20261020/`。交付报告明确区分已安装、未渲染和原生功能未测。
+- 证据目录：截图 `<AI_ARTIFACT_ROOT>/图片与设计/理论考试练习系统/P5-A-本机Android验收-20261020/`；模拟器日志及交付报告 `<AI_ARTIFACT_ROOT>/报告与研究/理论考试练习系统/P5-A-本机Android验收-20261020/`。交付报告明确区分已安装、未渲染和原生功能未测。
 - 回归：mobile typecheck/build/UI smoke 14/14；server typecheck/build/tests 59/59；Chromium Web browser suite 通过。正式 SQLite V4、四个用户、旧端口服务和隧道均未修改。当前无连接设备，模拟器已停止。
 - 下一步仍在 P5-A：使用可用 VT-x/KVM 的主机或 Android 真机重试，优先定位系统 WebView/软件仿真崩溃；之后再验收扫码、安全存储、断网恢复、练习/考试恢复、更新器。不得以 Chromium/CI 代替本机 Android 验收，不进入 P5-B。
 

@@ -1,14 +1,14 @@
 [Unit]
 Description=Theory Exam P5-B verified off-device backup and TLS expiry check
 After=network-online.target
-RequiresMountsFor=/mnt/Server_Data_Backup /mnt/Server_Data_Backup/服务器备份数据/理论考试练习系统
+RequiresMountsFor=/mnt/<BACKUP_VOLUME> /mnt/<BACKUP_VOLUME>/<PROJECT_DIR>
 
 [Service]
 Type=oneshot
-WorkingDirectory=/mnt/Server_Data_Backup/服务器备份数据/理论考试练习系统
+WorkingDirectory=/mnt/<BACKUP_VOLUME>/<PROJECT_DIR>
 EnvironmentFile=%h/.config/theory-exam/p5b-deploy-20261022/api.env
 EnvironmentFile=%h/.config/theory-exam/p5b-deploy-20261022/maintenance.env
-ExecStart=%h/.local/share/mise/installs/node/26.8.2/bin/node /mnt/Server_Data_Backup/服务器备份数据/理论考试练习系统/apps/server/scripts/p5b-maintenance.mjs
+ExecStart=%h/.local/share/mise/installs/node/<NODE_VERSION>/bin/node /mnt/<BACKUP_VOLUME>/<PROJECT_DIR>/apps/server/scripts/p5b-maintenance.mjs
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
