@@ -27,14 +27,14 @@ flowchart TB
   end
 
   subgraph PublicEdge[公网入口：MeFrp TCP 透传，不终止 TLS]
-    APIEdge[118.24.61.190:30946]
-    WebEdge[118.24.61.190:10393]
+    APIEdge[<PUBLIC_HOST>:<PUBLIC_API_PORT>]
+    WebEdge[<PUBLIC_HOST>:<PUBLIC_WEB_PORT>]
   end
 
   subgraph Host[用户的 Omarchy Linux 主机]
     APITLS[Fastify 学习 API\n127.0.0.1:3000 HTTPS]
     WebTLS[Web Gateway\n127.0.0.1:8080 HTTPS]
-    LANAPI[LAN API listener\n192.168.0.107:3000 HTTPS]
+    LANAPI[LAN API listener\n<LAN_IP>:3000 HTTPS]
     Admin[管理 listener\n127.0.0.1:3001]
     SQLite[(SQLite V6)]
   end
@@ -51,9 +51,9 @@ flowchart TB
 
 | 用途 | 客户端地址 | 本机目标 | TLS 与访问边界 |
 |---|---|---|---|
-| Android API 公网 | `https://118.24.61.190:30946` | `127.0.0.1:3000` | TCP 隧道透传；API 证书由本机 CA 签发，IP SAN 校验，不允许明文回退 |
-| Web 公网 | `https://118.24.61.190:10393` | `127.0.0.1:8080` | Web Gateway 本机终止 TLS；浏览器需单独信任 Web CA |
-| Android API 局域网 | `https://192.168.0.107:3000` | `192.168.0.107:3000` | 当前 DHCP 地址，不保证重启后不变；证书需包含该 IP SAN |
+| Android API 公网 | `https://<PUBLIC_HOST>:<PUBLIC_API_PORT>` | `127.0.0.1:3000` | TCP 隧道透传；API 证书由本机 CA 签发，IP SAN 校验，不允许明文回退 |
+| Web 公网 | `https://<PUBLIC_HOST>:<PUBLIC_WEB_PORT>` | `127.0.0.1:8080` | Web Gateway 本机终止 TLS；浏览器需单独信任 Web CA |
+| Android API 局域网 | `https://<LAN_IP>:3000` | `<LAN_IP>:3000` | 当前 DHCP 地址，不保证重启后不变；证书需包含该 IP SAN |
 | 管理界面与 API | 本机 loopback `127.0.0.1:3001` | `127.0.0.1:3001` | 不映射到 MeFrp，不通过公网 Web Gateway 代理 |
 
 公网地址和端口采用现有 MeFrp TCP 隧道。TCP 节点只转发加密字节；证书验证发生在客户端到本机 HTTPS listener 之间。无域名、无 DDNS。普通浏览器不会读取 Android APK 的 CA 信任设置；每台需要访问 Web 的电脑必须另行信任 Web 私有 CA。当前 SAN 含公网 IP、已配置 LAN IP 和 loopback；LAN 地址尚未确认为固定租约。
@@ -158,10 +158,19 @@ THEORY_API_CA_FILE=/absolute/path/to/api-ca.pem \
 
 CA 私钥、服务器叶私钥、正式 SQLite、服务凭据均不能用来构建 APK，也不能放入 Git。测试用 CA 和生产 API CA 是不同用途，不要互换。
 
+网络安全配置（`apps/mobile/android/app/src/main/res/xml/network_security_config.xml`）同样不在仓库里维护真实 IP。Android 的 IP 级 trust-anchor 不支持通配，必须写死部署主机地址，因此该文件由 Gradle 任务 `prepareNetworkSecurityConfig` 在构建期从仓库外清单生成：
+
+```bash
+THEORY_ANDROID_TRUST_HOSTS_FILE=/absolute/path/to/android-trust-hosts.txt \
+  npm --prefix apps/mobile run android:debug
+```
+
+清单为纯文本，每行一个 IPv4（默认路径 `~/.config/theory-exam/p5b-deploy-20261022/android-trust-hosts.txt`，权限 0600）。任务会校验条目必须是 IPv4 字面量、拒绝空清单，然后生成只信任这些主机 + `@raw/theory_exam_api_ca` 的配置。仓库内保留的版本不信任任何主机——用仓库内文件直接构建出的 APK 连不上部署实例，这是刻意的安全默认值。
+
 ## 当前状态与限制
 
-- P5-B 实际运行入口为 `https://118.24.61.190:30946`（Android API）和 `https://118.24.61.190:10393`（Web）；Android dev.10 已通过真实登录和练习，数据库 V6 已导入真实 1,283 题。
+- P5-B 实际运行入口为 `https://<PUBLIC_HOST>:<PUBLIC_API_PORT>`（Android API）和 `https://<PUBLIC_HOST>:<PUBLIC_WEB_PORT>`（Web）；Android dev.10 已通过真实登录和练习，数据库 V6 已导入真实 1,283 题。
 - Web 修复已部署到公网 Gateway/API。严格 CA Chromium 直接访问公网完成 16 个路由 × 6 种视口；公网健康为 200、未认证会话为 401、管理 API/页面为 404；没有横向溢出、未捕获 JavaScript 异常或意外 HTTP 错误。完整登录、会话恢复、练习判题、收藏增删与专项练习、错题两轮掌握、考试答题同步/恢复/交卷/复盘以及 A/B 账号切换，使用隔离 SQLite、真实 Excel 题库和 production Web Gateway HTTPS 构建验证，避免在正式账号写入验收数据。相关截图和部署回滚快照保存在 AI 产出目录 `报告与研究/理论考试练习系统/P5-B-Web验收-20261023/`。P5-B 阶段整体状态继续按路线图跟踪。
-- LAN `192.168.0.107` 当前来自 DHCP，尚未确认静态租约；更换 LAN 地址需要同步证书 SAN 和 APK 网络策略。
+- LAN 地址（`<LAN_IP>`）当前来自 DHCP，尚未确认静态租约；更换 LAN 地址需要同步证书 SAN 和 APK 网络策略。
 - Android dev.10 是 Debug 签名测试包。正式 APK 签名连续性、完整应用内升级、正式 GitHub Release 和发布 QA 属 P6。
 - 本项目的开发 APK `dev.1`–`dev.10` 不是连续的公开发行说明；没有逐个版本归档记录的构建明确标为“未留可核验证据”，不根据版本号推测 Bug 修复。

@@ -92,12 +92,12 @@
            │ HTTPS (IP SAN)               │ HTTPS (IP SAN)
            ▼                              ▼
    MeFrp TCP 隧道 A                 MeFrp TCP 隧道 B
-        :30946                           :10393
+     <PUBLIC_API_PORT>               <PUBLIC_WEB_PORT>
            │ TCP 透传（不终止 TLS）          │
            ▼                              ▼
    Fastify 学习 API                Web Gateway :8080
    127.0.0.1:3000                         │
-   LAN 192.168.0.107:3000 ────────┐       │ 同源白名单 /api/* 代理
+   LAN <LAN_IP>:3000 ─────────────┐       │ 同源白名单 /api/* 代理
            │                       │       ▼
            └───────────────────────┴──► Fastify 学习 API
                                            │
@@ -136,7 +136,7 @@
 ## 安全边界
 
 - 生产 API 与 Web 全部 HTTPS + IP SAN；不含域名，不做明文回退。
-- Android 包内只有 **CA 公开证书**；`usesCleartextTraffic=false`，`network_security_config` 只对明确的 IP（公网 API、当前 LAN IP）信任该私有 CA。
+- Android 包内只有 **CA 公开证书**；`usesCleartextTraffic=false`，`network_security_config` 只对明确的 IP（公网 API、当前 LAN IP）信任该私有 CA。该配置与信任主机清单同样**在构建期从仓库外注入**，仓库内只保留不信任任何主机的安全默认值。
 - 浏览器 Web CA 与 Android API CA 分开管理；每个访问 Web 的电脑需单独信任 Web CA。**禁止**"忽略证书错误"、trust-all、关闭主机名/IP 校验。
 - 登录限流；登录错误不区分"用户不存在/密码错/账号停用"；日志与响应不输出密码、哈希或 Token。
 - Cookie 写请求校验 CSRF token 与 Origin；同 IP 不同端口不做 Cookie 混淆。
@@ -161,8 +161,8 @@
 | 项目 | 值 |
 |---|---|
 | SHA-256 | `5d0089f664c63d52ade066679b38320c12b418de54613c716dd19a443e78ebb2` |
-| API 地址 | `https://118.24.61.190:30946` |
-| Web 地址 | `https://118.24.61.190:10393` |
+| API 地址 | `https://<PUBLIC_HOST>:<PUBLIC_API_PORT>` |
+| Web 地址 | `https://<PUBLIC_HOST>:<PUBLIC_WEB_PORT>` |
 
 > 这是 Debug 签名测试包，**不是正式发行版**。升级连续性、正式签名与正式 Release 属 P6。
 
@@ -261,6 +261,8 @@ npm --prefix apps/server run web:start
 
 运维手册（备份/恢复、证书轮换、回滚、排障）见 [docs/OPERATIONS-P5.md](docs/OPERATIONS-P5.md)。
 
+> 本仓库文档中的 `<PUBLIC_HOST>`、`<PUBLIC_API_PORT>`、`<PUBLIC_WEB_PORT>`、`<LAN_IP>` 均为占位符，真实部署地址不写入公开文档。实际值只保存在维护者本机的受限部署配置中。
+
 ## 版本与阶段
 
 | 阶段 | 状态 |
@@ -284,7 +286,7 @@ npm --prefix apps/server run web:start
 
 **P5-B 未闭环（3 项，运维性质，不阻塞构建与合并）**
 
-1. LAN 地址 `192.168.0.107` 仍是 DHCP 自动分配，未确认路由器的静态租约。地址变化需重新签发证书并更新 APK 网络策略。
+1. LAN 地址（`<LAN_IP>`）仍是 DHCP 自动分配，未确认路由器的静态租约。地址变化需重新签发证书并更新 APK 网络策略。
 2. `nftables` 的 LAN TCP 3000/8080 最小放行规则未应用（当前无 sudo 非交互权限读取有效 ruleset），也未从第二台 LAN 设备做过访问验收。本机自连健康**不能**替代 LAN 跨设备验证。
 3. MeFrp 两个客户端进程仍以 `-t` argv 传递 token；官方单隧道配置只读导出接口对现有快捷启动凭据返回 HTTP 401，尚无可复现的安全迁移配置与回滚演练。token 值未进入仓库、文档或日志。
 
